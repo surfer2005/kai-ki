@@ -119,3 +119,11 @@ def test_hoerer_dienst_ist_gueltiges_python():
     from kai_ki.hoerer import DIENST, PAKET, MODELL
     ast.parse(DIENST)
     assert PAKET.startswith("mlx-whisper==") and MODELL.startswith("mlx-community/whisper")
+
+
+def test_gespraech_in_der_app():
+    from datetime import date
+    from kai_ki.gespraech import system_text, verlauf_markdown
+    assert "Dienstag, der 17.11.2026" in system_text(date(2026, 11, 17))
+    md = verlauf_markdown([{"role": "user", "content": "Hallo", "anhang": "ls.pdf"}, {"role": "assistant", "content": "Hallo!"}], laufend="Ich")
+    assert md.startswith("**Du:** 📎 ls.pdf") and "**KAI KI:**\n\nHallo!" in md and md.endswith("Ich ▍")

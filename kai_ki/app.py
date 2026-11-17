@@ -6,10 +6,11 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QMainWindow, QMenu, QMessageBox, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget)
+                               QMainWindow, QMenu, QMessageBox, QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
 from . import __version__
 from .arbeiter import Arbeiter
+from .chatfenster import ChatFenster
 from .einstellungen import MODELLE, VORGABE_MODELL, laden, speichern
 from .engine import Engine
 from .kai import Kai, KaiFehler
@@ -75,7 +76,10 @@ class Fenster(QMainWindow):
         self.letzte_meldung = QLabel(""); self.letzte_meldung.setWordWrap(True); self.letzte_meldung.setStyleSheet("color:#666")
         v3.addWidget(self.letzte_meldung)
         lay.addWidget(g3, 1)
-        self.setCentralWidget(w); self.resize(560, 620)
+        # Reiter: „Gerät“ (wie bisher) und „Chat“ (direkt mit dem Modell auf diesem Mac, Peter 2026-11-17)
+        reiter = QTabWidget(); reiter.addTab(w, "Gerät")
+        self.chat = ChatFenster(lambda: self.engine); reiter.addTab(self.chat, "Chat")
+        self.setCentralWidget(reiter); self.resize(680, 720)
 
         self.tray = QSystemTrayIcon(punkt(STATUS_FARBE["aus"]), self)
         menu = QMenu(); a1 = QAction("Fenster öffnen", self); a1.triggered.connect(self.zeigen); a2 = QAction("Beenden", self); a2.triggered.connect(self.beenden)

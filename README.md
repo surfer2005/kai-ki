@@ -21,6 +21,13 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
 
+## Chat in der App (ab 0.1.9)
+
+Reiter „Chat“: Fragen direkt an das Modell auf diesem Mac — ohne KAI und ohne Netz, die Antwort erscheint beim Schreiben.
+Mit „+“ ein Bild oder PDF (erste Seite, mit Texterkennung) anhängen. Das Modell muss im Reiter „Gerät“ gestartet sein. Den
+Chat mit Mikrofon und KAI-Daten (nur Admin) gibt es in KAI unter Informationen → KI-Chat; dafür holt die App die Aufträge
+bei KAI ab (Chat ab 0.1.7, Mikrofon/Whisper ab 0.1.8).
+
 ## Abgebrochener Download (ab 0.1.6)
 
 Bricht der Modell-Download ab (Netz), setzt llama.cpp beim nächsten Start am angefangenen Stück fort
