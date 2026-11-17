@@ -23,18 +23,32 @@ class Arbeiter(threading.Thread):
         self.melden, self.erledigt, self.status = melden, erledigt, status
         self.halt = threading.Event()
 
-    def run(self) -> None:
+    def melden_kai(self, zustand: str, fortschritt: str | None = None, prozent: int | None = None) -> None:
+        """Zustand an KAI (Gerätezeile); ohne Verbindung still weiter — das Laden hängt nicht an KAI."""
         try:
-            self.status("startet")
-            self.engine.starten()
+            self.kai.hallo(MODELLE[self.engine.modell_key]["name"], zustand, fortschritt, prozent)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def run(self) -> None:
+        letzt = [0.0]
+
+        def fortschritt(text: str, prozent: int) -> None:
+            self.status(text)                                  # in der App sofort
+            if time.time() - letzt[0] > 15:                    # an KAI alle 15 s
+                letzt[0] = time.time(); self.melden_kai("laedt", text, prozent)
+        try:
+            self.status("startet"); self.melden_kai("laedt", "Rechenprogramm und Modell werden vorbereitet …", 0)
+            self.engine.starten(fortschritt=fortschritt)
         except Exception as e:  # noqa: BLE001 — Fehler sichtbar machen, nicht abstürzen
             self.status("fehler"); self.melden(f"Modell konnte nicht starten: {e}")
+            self.melden_kai("fehler", f"Modell konnte nicht starten: {e}"[:300])
             return
         letztes_hallo = 0.0
         while not self.halt.is_set():
             try:
                 if time.time() - letztes_hallo > 60:
-                    self.kai.hallo(MODELLE[self.engine.modell_key]["name"]); letztes_hallo = time.time()
+                    self.kai.hallo(MODELLE[self.engine.modell_key]["name"], "bereit"); letztes_hallo = time.time()
                 self.status("bereit")
                 a = self.kai.auftrag()
                 if a:

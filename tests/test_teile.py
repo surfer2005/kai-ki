@@ -44,3 +44,10 @@ def test_llama_ausgabe_vorabversion_und_tar(tmp_path):
     entpacken(puf.getvalue(), "arm.tar.gz", tmp_path)
     assert (tmp_path / "llama-b12473" / "llama-server").is_file()
     assert (tmp_path / "llama-b12473" / "libggml.dylib").is_symlink()
+
+
+def test_ladestand_text():
+    from kai_ki.engine import ladestand
+    assert ladestand(2_300_000_000, 5_800_000_000, True) == ("Download 2,3 von ca. 5,8 GB (39 %)", 39)
+    assert ladestand(5_900_000_000, 5_800_000_000, False) == ("Modell wird in den Arbeitsspeicher geladen …", 99)
+    assert ladestand(0, 5_800_000_000, False)[0].startswith("Download wartet")

@@ -50,8 +50,10 @@ class Kai:
         self.token = r["token"]
         return r
 
-    def hallo(self, modell: str) -> dict:
-        return self._post("hallo", {"version": __version__, "modell": modell, "info": geraete_info()})
+    def hallo(self, modell: str, zustand: str | None = None, fortschritt: str | None = None, prozent: int | None = None) -> dict:
+        """Lebenszeichen; zustand laedt|bereit|fehler + Fortschritt erscheinen in KAI in der Gerätezeile."""
+        info = {**geraete_info(), "zustand": zustand, "fortschritt": fortschritt, "prozent": prozent}
+        return self._post("hallo", {"version": __version__, "modell": modell, "info": info})
 
     def auftrag(self, warten_ms: int = 20000) -> dict | None:
         r = self._post("auftrag", {"warten_ms": warten_ms}, timeout=warten_ms / 1000 + 30)

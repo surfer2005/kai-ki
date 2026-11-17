@@ -142,7 +142,7 @@ class Fenster(QMainWindow):
         self.status.setText(STATUS_TEXT.get(s, s))
         if s == "fehler":                 # nach einem Fehler gleich wieder „Starten“ anbieten
             self.start_knopf.setEnabled(True); self.stopp_knopf.setEnabled(False)
-        self.tray.setIcon(punkt(STATUS_FARBE.get(s, "#8a8f8c"))); self.tray.setToolTip(f"KAI KI – {STATUS_TEXT.get(s, s)}")
+        self.tray.setIcon(punkt(STATUS_FARBE.get(s, "#b07a17")))   # unbekannt = Ladefortschritt (gelb); self.tray.setToolTip(f"KAI KI – {STATUS_TEXT.get(s, s)}")
 
 
 def main():

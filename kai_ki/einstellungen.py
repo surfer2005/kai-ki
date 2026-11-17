@@ -8,8 +8,10 @@ DATEI = ORDNER / "einstellungen.json"
 
 # Modelle (Bildmodelle im GGUF-Format, llama.cpp lädt sie beim ersten Start von Hugging Face)
 MODELLE = {
-    "qwen25vl-7b": {"name": "Qwen2.5-VL 7B (genauer)", "hf": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF", "groesse": "ca. 6 GB"},
-    "qwen25vl-3b": {"name": "Qwen2.5-VL 3B (schneller)", "hf": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF", "groesse": "ca. 3 GB"},
+    "qwen25vl-7b": {"name": "Qwen2.5-VL 7B (genauer)", "hf": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF", "groesse": "ca. 6 GB",
+                    "bytes": 5_800_000_000},   # Q4_K_M 4,68 GB + Bildteil (mmproj) 0,85–1,35 GB
+    "qwen25vl-3b": {"name": "Qwen2.5-VL 3B (schneller)", "hf": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF", "groesse": "ca. 3 GB",
+                    "bytes": 3_000_000_000},   # Q4_K_M 1,93 GB + mmproj 0,84–1,34 GB
 }
 VORGABE_MODELL = "qwen25vl-7b"
 

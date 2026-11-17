@@ -84,6 +84,25 @@ def programm_laden(melden=print) -> Path:
     return p
 
 
+def ordner_bytes(p: Path) -> int:
+    """Was im Modell-Ordner liegt (auch halb geladene Dateien) — Verweise nicht doppelt zählen."""
+    try:
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink())
+    except OSError:
+        return 0
+
+
+def ladestand(geladen: int, erwartet: int, laedt: bool) -> tuple[str, int]:
+    """Text + Prozent für die Anzeige. `laedt` = die Größe ändert sich noch (Download läuft)."""
+    gb = lambda b: f"{b / 1e9:.1f}".replace(".", ",")
+    pz = max(0, min(99, int(geladen * 100 / erwartet))) if erwartet else 0
+    if laedt:
+        return f"Download {gb(geladen)} von ca. {gb(erwartet)} GB ({pz} %)", pz
+    if geladen < erwartet * 0.8:
+        return f"Download wartet … {gb(geladen)} von ca. {gb(erwartet)} GB", pz
+    return "Modell wird in den Arbeitsspeicher geladen …", 99
+
+
 class Engine:
     def __init__(self, modell_key: str, melden=print):
         self.modell_key = modell_key if modell_key in MODELLE else next(iter(MODELLE))
@@ -101,7 +120,7 @@ class Engine:
         except requests.RequestException:
             return False
 
-    def starten(self, warten_s: int = 3600) -> None:
+    def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None) -> None:
         if self.bereit():
             return
         server = programm_laden(self.melden)
@@ -114,12 +133,18 @@ class Engine:
              "-c", "12288", "-ngl", "99"],
             stdout=log, stderr=subprocess.STDOUT, env=umgebung, cwd=str(server.parent))
         ende = time.time() + warten_s
+        erwartet = MODELLE[self.modell_key].get("bytes", 0)
+        vorher, geaendert = ordner_bytes(MODELL_ORDNER), 0.0
         while time.time() < ende:
             if self.proc.poll() is not None:
                 raise EngineFehler(f"Rechenprogramm beendet (Code {self.proc.returncode}) — siehe {self.log}")
             if self.bereit():
                 self.melden(f"{self.modell_name} ist bereit.")
                 return
+            jetzt_b = ordner_bytes(MODELL_ORDNER)
+            if jetzt_b != vorher:
+                vorher, geaendert = jetzt_b, time.time()
+            fortschritt(*ladestand(jetzt_b, erwartet, time.time() - geaendert < 10))
             time.sleep(2)
         raise EngineFehler("Modell wurde nicht rechtzeitig bereit")
 
