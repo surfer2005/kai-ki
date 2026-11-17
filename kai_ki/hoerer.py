@@ -70,9 +70,10 @@ def einrichten(melden=print) -> None:
     uv = uv_holen(melden)
     env = {**os.environ, **UV_ENV}
     with open(LOG, "a", encoding="utf-8") as log:
-        melden("Spracherkennung wird eingerichtet: Python 3.11 …")
-        if subprocess.run([str(uv), "venv", "--python", "3.11", str(UMGEBUNG)], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
-            raise HoererFehler("Python-Umgebung ließ sich nicht anlegen: " + _log_ende(400))
+        if not PYTHON.exists():
+            melden("Spracherkennung wird eingerichtet: Python 3.11 …")
+            if subprocess.run([str(uv), "venv", "--python", "3.11", str(UMGEBUNG)], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
+                raise HoererFehler("Python-Umgebung ließ sich nicht anlegen: " + _log_ende(400))
         melden("Spracherkennung wird eingerichtet: Whisper wird installiert (einige Minuten) …")
         if subprocess.run([str(uv), "pip", "install", "--python", str(PYTHON), PAKET], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
             raise HoererFehler("Whisper ließ sich nicht installieren: " + _log_ende(600))

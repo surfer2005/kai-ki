@@ -21,10 +21,13 @@ from .einstellungen import ORDNER
 UV_VERSION = "0.5.11"
 UV_URL = f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-aarch64-apple-darwin.tar.gz"
 PAKET = "chatterbox-tts==0.1.7"
+# Das Wasserzeichen-Modul von Chatterbox (resemble-perth) braucht pkg_resources — uv legt Umgebungen ohne setuptools an
+ZUSATZ = ["setuptools<81"]
+STAND = "2"                     # erhöhen, wenn eine bestehende Umgebung ergänzt werden muss
 SPRECHER = ORDNER / "sprecher"
 UMGEBUNG = SPRECHER / "umgebung"
 PYTHON = UMGEBUNG / "bin" / "python"
-MARKE = SPRECHER / f"eingerichtet-{PAKET.split('==')[1]}"
+MARKE = SPRECHER / f"eingerichtet-{PAKET.split('==')[1]}-{STAND}"
 LOG = SPRECHER / "sprecher.log"
 
 # Der Dienst (läuft in der Chatterbox-Umgebung): eine JSON-Zeile rein, eine JSON-Zeile raus
@@ -37,6 +40,12 @@ def melde(d):
     _aus.write(json.dumps(d) + "\n"); _aus.flush()
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 import torch
+try:                                  # Wasserzeichen-Modul vorab prüfen — sonst bricht das Laden ohne klare Meldung ab
+    import perth
+    if getattr(perth, "PerthImplicitWatermarker", None) is None:
+        from perth.perth_net.perth_net_implicit.perth_watermarker import PerthImplicitWatermarker  # noqa: F401 — zeigt den echten Fehler
+except Exception as e:
+    melde({"bereit": False, "fehler": f"Wasserzeichen-Modul (resemble-perth): {e.__class__.__name__}: {e}"}); sys.exit(1)
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 geraet = "mps" if torch.backends.mps.is_available() else "cpu"
 def laden(g):
@@ -150,11 +159,12 @@ def einrichten(melden=print) -> None:
     uv = uv_holen(melden)
     env = {**os.environ, **UV_ENV}
     with open(LOG, "a", encoding="utf-8") as log:
-        melden("Sprecher wird eingerichtet: Python 3.11 …")
-        if subprocess.run([str(uv), "venv", "--python", "3.11", str(UMGEBUNG)], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
-            raise SprecherFehler("Python-Umgebung ließ sich nicht anlegen: " + _log_ende(400))
+        if not PYTHON.exists():           # bestehende Umgebung nur ergänzen, nicht neu anlegen (PyTorch nicht noch einmal laden)
+            melden("Sprecher wird eingerichtet: Python 3.11 …")
+            if subprocess.run([str(uv), "venv", "--python", "3.11", str(UMGEBUNG)], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
+                raise SprecherFehler("Python-Umgebung ließ sich nicht anlegen: " + _log_ende(400))
         melden("Sprecher wird eingerichtet: Chatterbox und PyTorch werden installiert (einige Minuten) …")
-        if subprocess.run([str(uv), "pip", "install", "--python", str(PYTHON), PAKET], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
+        if subprocess.run([str(uv), "pip", "install", "--python", str(PYTHON), PAKET, *ZUSATZ], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:
             raise SprecherFehler("Chatterbox ließ sich nicht installieren: " + _log_ende(600))
     MARKE.write_text(time.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -200,7 +210,7 @@ class Sprecher:
             stopp.set()
         if not erste or not erste.get("bereit"):
             self.stoppen()
-            raise SprecherFehler("Sprecher startet nicht: " + _log_ende(600))
+            raise SprecherFehler("Sprecher startet nicht: " + ((erste or {}).get("fehler") or _log_ende(600)))
 
     def sprechen(self, text: str, sprache: str = "de", lebhaft=None, tempo=None, stimme: dict | None = None, fortschritt=lambda t: None) -> tuple[bytes, float]:
         with self.lock:
