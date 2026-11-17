@@ -87,6 +87,14 @@ def programm_laden(melden=print) -> Path:
     return p
 
 
+def teil_bytes(p: Path) -> int:
+    """Größe angefangener Downloads (llama.cpp: *.downloadInProgress)."""
+    try:
+        return sum(f.stat().st_size for f in p.rglob("*.downloadInProgress") if f.is_file())
+    except OSError:
+        return 0
+
+
 def ordner_bytes(p: Path) -> int:
     """Was im Modell-Ordner liegt (auch halb geladene Dateien) — Verweise nicht doppelt zählen."""
     try:
@@ -167,7 +175,20 @@ class Engine:
         except requests.RequestException:
             return False
 
-    def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None) -> None:
+    def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None, versuche: int = 6) -> None:
+        """Modell starten. Bricht der Download ab (Netz), startet die App llama-server bis zu `versuche`-mal neu — llama.cpp
+        setzt dabei am angefangenen Stück (*.downloadInProgress) fort, statt neu zu beginnen."""
+        for versuch in range(1, versuche + 1):
+            try:
+                return self._starten(warten_s, fortschritt)
+            except EngineFehler as e:
+                if versuch == versuche or "nicht rechtzeitig" in str(e):
+                    raise
+                self.stoppen()
+                fortschritt(f"Download unterbrochen – neuer Versuch {versuch + 1} von {versuche} (setzt fort) …", None)
+                time.sleep(min(60, 10 * versuch))
+
+    def _starten(self, warten_s: int, fortschritt) -> None:
         if self.proc and self.proc.poll() is None and self.bereit():
             return                                  # läuft schon — und zwar unseres, mit unserem Modell
         uebrig_gebliebene_beenden(self.melden)
@@ -187,7 +208,8 @@ class Engine:
         atexit.register(self.stoppen)               # auch bei Cmd+Q / Absturz der Oberfläche nicht weiterlaufen lassen
         ende = time.time() + warten_s
         erwartet = MODELLE[self.modell_key].get("bytes", 0)
-        anfang = ordner_bytes(MODELL_ORDNER)
+        # schon angefangene Stücke (abgebrochener Download) zählen als geladen — die Anzeige beginnt nicht wieder bei 0 %
+        anfang = ordner_bytes(MODELL_ORDNER) - teil_bytes(MODELL_ORDNER)
         vorher, geaendert, beginn = anfang, 0.0, time.time()
         while time.time() < ende:
             if self.proc.poll() is not None:

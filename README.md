@@ -21,6 +21,12 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
 
+## Abgebrochener Download (ab 0.1.6)
+
+Bricht der Modell-Download ab (Netz), setzt llama.cpp beim nächsten Start am angefangenen Stück fort
+(`*.downloadInProgress` im Modell-Ordner, HTTP-Range) — nichts wird doppelt geladen. Die App versucht das von selbst
+bis zu sechsmal; die Anzeige zählt das schon Geladene mit und beginnt nicht wieder bei 0 %.
+
 ## Sprechen (ab 0.1.5)
 
 Zweite Auftragsart: KAI schickt einen Text, die App macht daraus eine Tonspur (WAV) — für Erklärvideos und Filme.

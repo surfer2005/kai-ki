@@ -90,3 +90,11 @@ def test_antwort_lesen_ueberspringt_fremde_zeilen():
 def test_dienst_ist_gueltiges_python():
     from kai_ki.sprecher import DIENST
     compile(DIENST, "dienst.py", "exec")
+
+
+def test_angefangener_download_zaehlt_als_geladen(tmp_path):
+    from kai_ki.engine import ordner_bytes, teil_bytes
+    (tmp_path / "anderes-modell.gguf").write_bytes(b"x" * 100)
+    (tmp_path / "neu.gguf.downloadInProgress").write_bytes(b"y" * 40)
+    assert teil_bytes(tmp_path) == 40
+    assert ordner_bytes(tmp_path) - teil_bytes(tmp_path) == 100   # Anfangswert: nur das fertige andere Modell
