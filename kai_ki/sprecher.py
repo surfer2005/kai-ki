@@ -123,14 +123,12 @@ def _log_ende(n: int = 1500) -> str:
         return ""
 
 
-def einrichten(melden=print) -> None:
-    """Python-Umgebung mit Chatterbox anlegen (einmalig, einige Minuten)."""
-    if PYTHON.exists() and MARKE.exists():
-        return
+def uv_holen(melden=print) -> Path:
+    """Werkzeug uv (Astral, offizielle Ausgabe) — legt Python-Umgebungen für Sprecher und Spracherkennung an."""
     SPRECHER.mkdir(parents=True, exist_ok=True)
     uv = SPRECHER / "uv" / "uv-aarch64-apple-darwin" / "uv"
     if not uv.exists():
-        melden("Sprecher wird eingerichtet: Werkzeug uv wird geladen …")
+        melden("Werkzeug uv wird geladen …")
         d = requests.get(UV_URL, timeout=300, headers={"User-Agent": "KAI-KI"}); d.raise_for_status()
         ziel = SPRECHER / "uv"; ziel.mkdir(exist_ok=True)
         with tempfile.TemporaryFile() as tf:
@@ -138,7 +136,19 @@ def einrichten(melden=print) -> None:
             with tarfile.open(fileobj=tf, mode="r:gz") as t:
                 t.extractall(ziel, filter="data")
         uv.chmod(0o755)
-    env = {**os.environ, "UV_PYTHON_INSTALL_DIR": str(SPRECHER / "python"), "UV_CACHE_DIR": str(SPRECHER / "cache")}
+    return uv
+
+
+# uv legt Python und Paket-Zwischenspeicher gemeinsam ab (Sprecher und Spracherkennung teilen sie)
+UV_ENV = {"UV_PYTHON_INSTALL_DIR": str(SPRECHER / "python"), "UV_CACHE_DIR": str(SPRECHER / "cache")}
+
+
+def einrichten(melden=print) -> None:
+    """Python-Umgebung mit Chatterbox anlegen (einmalig, einige Minuten)."""
+    if PYTHON.exists() and MARKE.exists():
+        return
+    uv = uv_holen(melden)
+    env = {**os.environ, **UV_ENV}
     with open(LOG, "a", encoding="utf-8") as log:
         melden("Sprecher wird eingerichtet: Python 3.11 …")
         if subprocess.run([str(uv), "venv", "--python", "3.11", str(UMGEBUNG)], env=env, stdout=log, stderr=subprocess.STDOUT).returncode != 0:

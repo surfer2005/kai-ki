@@ -112,3 +112,10 @@ def test_chat_nachrichten_bilder_und_texterkennung():
     assert teile[0]["image_url"]["url"] == "data:image/png;base64,UE5H"
     assert teile[1]["type"] == "text" and teile[1]["text"].startswith("Was steht hier?") and "Relay GmbH" in teile[1]["text"]
     assert n[2] == {"role": "assistant", "content": "Ein Lieferschein."}
+
+
+def test_hoerer_dienst_ist_gueltiges_python():
+    import ast
+    from kai_ki.hoerer import DIENST, PAKET, MODELL
+    ast.parse(DIENST)
+    assert PAKET.startswith("mlx-whisper==") and MODELL.startswith("mlx-community/whisper")

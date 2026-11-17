@@ -10,6 +10,7 @@ from .engine import Engine, antwort_ergaenzen, chat_nachrichten
 from .kai import Kai, KaiFehler
 from .seite import texterkennung, zu_png
 from .sprecher import Sprecher
+from .hoerer import Hoerer
 
 
 def aufgabe_mit_texterkennung(aufgabe: str, ocr_text: str) -> str:
@@ -27,6 +28,7 @@ class Arbeiter(threading.Thread):
         self.melden, self.erledigt, self.status = melden, erledigt, status
         self.halt = threading.Event()
         self.sprecher = Sprecher()
+        self.hoerer = Hoerer()
 
     def melden_kai(self, zustand: str, fortschritt: str | None = None, prozent: int | None = None) -> None:
         """Zustand an KAI (Gerätezeile); ohne Verbindung still weiter — das Laden hängt nicht an KAI."""
@@ -57,7 +59,7 @@ class Arbeiter(threading.Thread):
                 self.status("bereit")
                 a = self.kai.auftrag()
                 if a:
-                    {"sprechen": self.sprechen, "chat": self.chatten}.get(a.get("art"), self.bearbeiten)(a)
+                    {"sprechen": self.sprechen, "chat": self.chatten, "hoeren": self.hoeren}.get(a.get("art"), self.bearbeiten)(a)
             except KaiFehler as e:
                 self.status("getrennt"); self.melden(str(e)); self.halt.wait(15)
             except Exception as e:  # noqa: BLE001
@@ -87,7 +89,27 @@ class Arbeiter(threading.Thread):
             self.melden_kai("bereit")
 
     def stoppen(self) -> None:
-        self.halt.set(); self.sprecher.stoppen()
+        self.halt.set(); self.sprecher.stoppen(); self.hoerer.stoppen()
+
+    def hoeren(self, a: dict) -> None:
+        """Mikrofon im KI-Chat: Aufnahme (WAV) → Text. Beim ersten Mal wird Whisper eingerichtet — der Stand geht an KAI."""
+        self.status("hoert")
+        beginn, letzt = time.time(), [0.0]
+
+        def fortschritt(text: str) -> None:
+            self.status(text)
+            if time.time() - letzt[0] > 3:
+                letzt[0] = time.time(); self.kai.zwischenstand(a["id"], text)
+        try:
+            text = self.hoerer.hoeren(base64.b64decode(a.get("ton") or ""), a.get("sprache") or "de", fortschritt=fortschritt)
+            dauer = int((time.time() - beginn) * 1000)
+            self.kai.ergebnis(a["id"], text=text, dauer_ms=dauer)
+            self.erledigt({"id": a["id"], "dauer_s": dauer / 1000, "ok": True, "art": "hoeren", "zeichen": len(text)})
+        except KaiFehler:
+            raise
+        except Exception as e:  # noqa: BLE001 — Fehler an KAI melden, dort steht er am Mikrofon
+            self.kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
+            self.erledigt({"id": a["id"], "dauer_s": time.time() - beginn, "ok": False, "fehler": str(e), "art": "hoeren"})
 
     def chatten(self, a: dict) -> None:
         """Gespräch aus KAI: Antwort schreiben, den Zwischenstand alle 0,7 s melden (in KAI erscheint sie beim Schreiben)."""

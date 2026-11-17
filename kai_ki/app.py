@@ -15,8 +15,8 @@ from .engine import Engine
 from .kai import Kai, KaiFehler
 
 STATUS_TEXT = {"aus": "nicht gestartet", "startet": "Modell wird geladen …", "bereit": "bereit – wartet auf Aufträge",
-               "arbeitet": "liest gerade eine Seite …", "spricht": "spricht gerade einen Text …", "chattet": "beantwortet eine Frage aus dem KI-Chat …", "getrennt": "KAI nicht erreichbar", "fehler": "Fehler"}
-STATUS_FARBE = {"bereit": "#2e7d5b", "arbeitet": "#1f6e9c", "spricht": "#1f6e9c", "chattet": "#1f6e9c", "startet": "#b07a17", "getrennt": "#b3412f", "fehler": "#b3412f", "aus": "#8a8f8c"}
+               "arbeitet": "liest gerade eine Seite …", "spricht": "spricht gerade einen Text …", "chattet": "beantwortet eine Frage aus dem KI-Chat …", "hoert": "erkennt gesprochene Sprache …", "getrennt": "KAI nicht erreichbar", "fehler": "Fehler"}
+STATUS_FARBE = {"bereit": "#2e7d5b", "arbeitet": "#1f6e9c", "spricht": "#1f6e9c", "chattet": "#1f6e9c", "hoert": "#1f6e9c", "startet": "#b07a17", "getrennt": "#b3412f", "fehler": "#b3412f", "aus": "#8a8f8c"}
 
 
 class Bote(QObject):
@@ -137,6 +137,9 @@ class Fenster(QMainWindow):
         if e.get("art") == "sprechen":
             text = f"{e['dauer_s']:.0f} s gerechnet, {e.get('ton_s', 0):.0f} s Ton" if e["ok"] else f"Fehler – {e.get('fehler', '')}"
             self.liste.insertItem(0, f"{zeit}  Sprechen {e['id']}: {text}")
+        elif e.get("art") == "hoeren":
+            text = f"{e['dauer_s']:.0f} s, {e.get('zeichen', 0)} Zeichen erkannt" if e["ok"] else f"Fehler – {e.get('fehler', '')}"
+            self.liste.insertItem(0, f"{zeit}  Mikrofon {e['id']}: {text}")
         elif e.get("art") == "chat":
             text = (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" + (" (in KAI gestoppt)" if e.get("gestoppt") else "")) if e["ok"] else f"Fehler – {e.get('fehler', '')}"
             self.liste.insertItem(0, f"{zeit}  Chat {e['id']}: {text}")

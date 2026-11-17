@@ -55,7 +55,7 @@ class Kai:
         info = {**geraete_info(), "zustand": zustand, "fortschritt": fortschritt, "prozent": prozent}
         return self._post("hallo", {"version": __version__, "modell": modell, "info": info})
 
-    def auftrag(self, warten_ms: int = 20000, arten: tuple = ("lesen", "sprechen", "chat")) -> dict | None:
+    def auftrag(self, warten_ms: int = 20000, arten: tuple = ("lesen", "sprechen", "chat", "hoeren")) -> dict | None:
         r = self._post("auftrag", {"warten_ms": warten_ms, "arten": list(arten)}, timeout=warten_ms / 1000 + 30)
         return r if r.get("id") else None
 
