@@ -178,13 +178,16 @@ class Engine:
     def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None, versuche: int = 6) -> None:
         """Modell starten. Bricht der Download ab (Netz), startet die App llama-server bis zu `versuche`-mal neu — llama.cpp
         setzt dabei am angefangenen Stück (*.downloadInProgress) fort, statt neu zu beginnen."""
+        self.angehalten = False
         for versuch in range(1, versuche + 1):
+            if self.angehalten:           # während der Pause angehalten
+                raise EngineFehler("angehalten")
             try:
                 return self._starten(warten_s, fortschritt)
             except EngineFehler as e:
-                if versuch == versuche or "nicht rechtzeitig" in str(e):
+                if versuch == versuche or "nicht rechtzeitig" in str(e) or self.angehalten:
                     raise
-                self.stoppen()
+                self.stoppen(); self.angehalten = False     # eigenes Aufräumen, kein Anhalten durch den Nutzer
                 fortschritt(f"Download unterbrochen – neuer Versuch {versuch + 1} von {versuche} (setzt fort) …", None)
                 time.sleep(min(60, 10 * versuch))
 
@@ -224,7 +227,10 @@ class Engine:
             time.sleep(2)
         raise EngineFehler("Modell wurde nicht rechtzeitig bereit")
 
+    angehalten = False             # gewollt angehalten (Anhalten/Modellwechsel) → kein neuer Versuch
+
     def stoppen(self) -> None:
+        self.angehalten = True
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:

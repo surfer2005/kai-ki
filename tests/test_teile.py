@@ -144,3 +144,36 @@ def test_vorlese_text_ohne_markdown():
     from kai_ki.gespraech import vorlese_text
     assert vorlese_text("Es sind **2** Meldungen.\n\n| Schiff | Anzahl |\n|---|---|\n| MS-LINDAU | 2 |\n- Punkt") == "Es sind 2 Meldungen. Schiff, Anzahl. MS-LINDAU, 2. Punkt"
     assert len(vorlese_text("Satz. " * 400)) <= 1500
+
+
+def test_abgeloester_ablauf_meldet_nichts_mehr():
+    from kai_ki.arbeiter import Arbeiter
+    gesehen = []
+    a = Arbeiter(kai=None, engine=None, status=gesehen.append, melden=gesehen.append)
+    a.status("bereit"); a.halt.set(); a.status("fehler"); a.melden("Modell konnte nicht starten")
+    assert gesehen == ["bereit"]
+
+
+def test_wiederholung_nur_ohne_anhalten(monkeypatch):
+    from kai_ki import engine as E
+    e = E.Engine("qwen35-9b"); versuche = []
+    monkeypatch.setattr(E.time, "sleep", lambda s: None)
+    def scheitert(w, f):
+        versuche.append(1)
+        raise E.EngineFehler("Rechenprogramm beendet")
+    monkeypatch.setattr(e, "_starten", scheitert)
+    try:
+        e.starten(versuche=3)
+    except E.EngineFehler:
+        pass
+    assert len(versuche) == 3                     # Netzabbruch: neue Versuche
+    versuche.clear()
+    def angehalten(w, f):
+        versuche.append(1); e.angehalten = True    # Nutzer hält während des Ladens an
+        raise E.EngineFehler("Rechenprogramm beendet")
+    monkeypatch.setattr(e, "_starten", angehalten)
+    try:
+        e.starten(versuche=3)
+    except E.EngineFehler:
+        pass
+    assert len(versuche) == 1

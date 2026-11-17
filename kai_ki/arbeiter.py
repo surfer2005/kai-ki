@@ -25,8 +25,11 @@ class Arbeiter(threading.Thread):
     def __init__(self, kai: Kai, engine: Engine, melden=print, erledigt=lambda e: None, status=lambda s: None):
         super().__init__(daemon=True)
         self.kai, self.engine = kai, engine
-        self.melden, self.erledigt, self.status = melden, erledigt, status
         self.halt = threading.Event()
+        # Nach „Anhalten“/Modellwechsel läuft dieser Ablauf noch kurz weiter — seine Meldungen dürfen die Oberfläche des
+        # neuen Ablaufs nicht mehr verändern (ein später „Fehler“ setzte sonst die Knöpfe zurück, obwohl alles lief)
+        lebt = lambda f: (lambda *a, **k: None if self.halt.is_set() else f(*a, **k))  # noqa: E731
+        self.melden, self.erledigt, self.status = lebt(melden), lebt(erledigt), lebt(status)
         self.sprecher = Sprecher()
         self.hoerer = Hoerer()
 
