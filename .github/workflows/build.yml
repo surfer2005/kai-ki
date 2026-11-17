@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   mac:
-    runs-on: macos-14
+    runs-on: macos-latest        # Apple Silicon (M1–M4); feste Versionen werden von GitHub zurückgezogen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
