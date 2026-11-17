@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+import tarfile
 import time
 import zipfile
 from pathlib import Path
@@ -30,30 +31,56 @@ def server_pfad() -> Path | None:
     return None
 
 
+# Rückfall, falls GitHub nicht antwortet (Abruf-Grenze o. ä.): eine geprüfte Ausgabe (2026-11-17)
+RUECKFALL = ("b12473", "https://github.com/ggml-org/llama.cpp/releases/download/b12473/llama-b12473-bin-macos-arm64.tar.gz")
+ENDUNGEN = ("-bin-macos-arm64.tar.gz", "-bin-macos-arm64.zip")
+
+
+def ausgabe_waehlen(releases: list) -> tuple[str, str] | None:
+    """Neueste Ausgabe mit macOS-arm64-Datei → (Tag, Adresse). llama.cpp veröffentlicht seine Builds als „Vorabversion“
+    (die „neueste“ Version hat keine Dateien), früher als .zip, seit Herbst 2026 als .tar.gz — beides wird genommen."""
+    for rel in releases or []:
+        for a in rel.get("assets", []) or []:
+            if a.get("name", "").endswith(ENDUNGEN):
+                return rel.get("tag_name", "?"), a["browser_download_url"]
+    return None
+
+
+def entpacken(daten: bytes, name: str, ziel: Path) -> None:
+    ziel.mkdir(parents=True, exist_ok=True)
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(daten)) as z:
+            z.extractall(ziel)
+    else:
+        with tarfile.open(fileobj=io.BytesIO(daten), mode="r:gz") as t:
+            t.extractall(ziel, filter="data")       # nur innerhalb des Ziels, Verweise (libggml.dylib → …) bleiben
+
+
 def programm_laden(melden=print) -> Path:
     """Neueste llama.cpp-Ausgabe für macOS (arm64) holen, falls noch nicht da."""
     p = server_pfad()
     if p:
         return p
     melden("Rechenprogramm (llama.cpp) wird geladen …")
-    r = requests.get("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", timeout=30,
-                     headers={"Accept": "application/vnd.github+json", "User-Agent": "KAI-KI"})
-    r.raise_for_status()
-    rel = r.json()
-    asset = next((a for a in rel.get("assets", []) if a["name"].endswith("-bin-macos-arm64.zip")), None)
-    if not asset:
-        raise EngineFehler("Keine macOS-Ausgabe von llama.cpp gefunden")
-    daten = requests.get(asset["browser_download_url"], timeout=600).content
-    PROGRAMM.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(io.BytesIO(daten)) as z:
-        z.extractall(PROGRAMM)
+    try:
+        r = requests.get("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30", timeout=30,
+                         headers={"Accept": "application/vnd.github+json", "User-Agent": "KAI-KI"})
+        r.raise_for_status()
+        wahl = ausgabe_waehlen(r.json()) or RUECKFALL
+    except Exception:  # noqa: BLE001 — dann die geprüfte Ausgabe
+        wahl = RUECKFALL
+    tag, url = wahl
+    melden(f"Lade llama.cpp {tag} …")
+    d = requests.get(url, timeout=600, headers={"User-Agent": "KAI-KI"})
+    d.raise_for_status()
+    entpacken(d.content, url, PROGRAMM)
     for f in PROGRAMM.rglob("*"):
-        if f.is_file() and (f.name.startswith("llama-") or f.suffix == ".dylib"):
+        if f.is_file() and not f.is_symlink() and (f.name.startswith("llama-") or f.suffix == ".dylib"):
             f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
-    (PROGRAMM / "version.txt").write_text(rel.get("tag_name", "?"))
+    (PROGRAMM / "version.txt").write_text(tag)
     p = server_pfad()
     if not p:
-        raise EngineFehler("llama-server fehlt in der geladenen Ausgabe")
+        raise EngineFehler(f"llama-server fehlt in der geladenen Ausgabe {tag}")
     return p
 
 

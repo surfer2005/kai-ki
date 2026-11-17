@@ -21,3 +21,26 @@ def test_volltext_aus_texterkennung():
 def test_aufgabe_mit_texterkennung():
     assert aufgabe_mit_texterkennung("Lies", "") == "Lies"
     assert "Texterkennung dieser Seite" in aufgabe_mit_texterkennung("Lies", "SWK000323L")
+
+
+def test_llama_ausgabe_vorabversion_und_tar(tmp_path):
+    """llama.cpp: „neueste“ Version ohne Dateien, Builds als Vorabversion mit .tar.gz (Stand 2026-11-17)."""
+    import io
+    import tarfile
+    from kai_ki.engine import ausgabe_waehlen, entpacken
+    rels = [{"tag_name": "b12474", "assets": []},
+            {"tag_name": "b12473", "assets": [{"name": "llama-b12473-bin-macos-x64.tar.gz", "browser_download_url": "x64"},
+                                              {"name": "llama-b12473-bin-macos-arm64.tar.gz", "browser_download_url": "arm"}]}]
+    assert ausgabe_waehlen(rels) == ("b12473", "arm")
+    assert ausgabe_waehlen([{"tag_name": "b1", "assets": [{"name": "llama-b1-bin-macos-arm64.zip", "browser_download_url": "z"}]}]) == ("b1", "z")
+    assert ausgabe_waehlen([{"tag_name": "v1.0.0", "assets": []}]) is None
+    puf = io.BytesIO()
+    with tarfile.open(fileobj=puf, mode="w:gz") as t:
+        inhalt = b"#!/bin/sh\n"
+        ti = tarfile.TarInfo("llama-b12473/llama-server"); ti.size = len(inhalt); ti.mode = 0o755
+        t.addfile(ti, io.BytesIO(inhalt))
+        li = tarfile.TarInfo("llama-b12473/libggml.dylib"); li.type = tarfile.SYMTYPE; li.linkname = "libggml.1.dylib"
+        t.addfile(li)
+    entpacken(puf.getvalue(), "arm.tar.gz", tmp_path)
+    assert (tmp_path / "llama-b12473" / "llama-server").is_file()
+    assert (tmp_path / "llama-b12473" / "libggml.dylib").is_symlink()
