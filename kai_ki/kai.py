@@ -55,9 +55,16 @@ class Kai:
         info = {**geraete_info(), "zustand": zustand, "fortschritt": fortschritt, "prozent": prozent}
         return self._post("hallo", {"version": __version__, "modell": modell, "info": info})
 
-    def auftrag(self, warten_ms: int = 20000, arten: tuple = ("lesen", "sprechen")) -> dict | None:
+    def auftrag(self, warten_ms: int = 20000, arten: tuple = ("lesen", "sprechen", "chat")) -> dict | None:
         r = self._post("auftrag", {"warten_ms": warten_ms, "arten": list(arten)}, timeout=warten_ms / 1000 + 30)
         return r if r.get("id") else None
+
+    def zwischenstand(self, auftrag_id: int, text: str) -> bool:
+        """Bisher geschriebener Chat-Text an KAI. False = in KAI gestoppt (oder vergeben) → aufhören zu schreiben."""
+        try:
+            return not self._post("zwischenstand", {"id": auftrag_id, "text": text}, timeout=10).get("stopp")
+        except KaiFehler:
+            return True                                     # kurz nicht erreichbar: weiterschreiben, das Ergebnis zählt
 
     def ergebnis(self, auftrag_id: int, text: str | None = None, fehler: str | None = None, dauer_ms: int | None = None,
                  tokens_ein: int | None = None, tokens_aus: int | None = None, ton: str | None = None) -> None:

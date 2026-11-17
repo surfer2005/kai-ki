@@ -253,6 +253,66 @@ class Engine:
         return text, int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
 
 
+    def chat(self, nachrichten: list, max_tokens: int = 1500, temperatur: float = 0.3, beim_schreiben=lambda text: True) -> tuple[str, int, int]:
+        """Gespräch (Text, Bilder als image_url) mit gestreamter Antwort. `beim_schreiben(text)` bekommt den bisher
+        geschriebenen Text; gibt es False zurück (in KAI gestoppt), hört das Modell auf. → Text, Tokens ein/aus."""
+        anfrage = {"messages": nachrichten, "max_tokens": max_tokens, "temperature": temperatur, "stream": True,
+                   "stream_options": {"include_usage": True}}
+        if MODELLE[self.modell_key].get("denken_aus"):      # Qwen3.5: ohne „Nachdenken“ antworten
+            anfrage["chat_template_kwargs"] = {"enable_thinking": False}
+        text, ein, aus = "", 0, 0
+        with requests.post(f"http://127.0.0.1:{PORT}/v1/chat/completions", json=anfrage, stream=True, timeout=(10, 900)) as r:
+            if r.status_code >= 400:
+                raise EngineFehler(f"Modell: {r.text[:300]}")
+            r.encoding = "utf-8"
+            for zeile in r.iter_lines(decode_unicode=True):
+                if not zeile or not zeile.startswith("data:"):
+                    continue
+                daten = zeile[5:].strip()
+                if daten == "[DONE]":
+                    break
+                try:
+                    j = json.loads(daten)
+                except ValueError:
+                    continue
+                for c in j.get("choices") or []:
+                    stueck = (c.get("delta") or {}).get("content")
+                    if stueck:
+                        text += stueck
+                u = j.get("usage") or {}
+                if u:
+                    ein, aus = int(u.get("prompt_tokens") or ein), int(u.get("completion_tokens") or aus)
+                if not beim_schreiben(text):
+                    break
+        return text, ein, aus
+
+
+def chat_nachrichten(nachrichten: list, bild=lambda seite: b"", ocr=lambda png: "") -> list:
+    """Nachrichten aus KAI → Format des Modells. Seiten (Bild/PDF) einer Nachricht werden Bilder, ihre Texterkennung
+    kommt als Hilfe dazu. `bild(seite)` → PNG, `ocr(png)` → Text (leer, wenn keine Texterkennung gewünscht)."""
+    import base64
+    aus = []
+    for m in nachrichten or []:
+        rolle = m.get("role") if m.get("role") in ("system", "user", "assistant") else "user"
+        seiten = m.get("seiten") or []
+        if not seiten:
+            aus.append({"role": rolle, "content": str(m.get("content") or "")})
+            continue
+        teile, erkannt = [], []
+        for i, s in enumerate(seiten, 1):
+            png = bild(s)
+            teile.append({"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}})
+            t = ocr(png)
+            if t:
+                erkannt.append(f"Seite {i}:\n{t[:3000]}")
+        text = str(m.get("content") or "")
+        if erkannt:
+            text += "\n\nTexterkennung der angehängten Seiten (auf dem Gerät, kann Lesefehler enthalten, nur als Hilfe):\n" + "\n\n".join(erkannt)
+        teile.append({"type": "text", "text": text})
+        aus.append({"role": rolle, "content": teile})
+    return aus
+
+
 def antwort_ergaenzen(text: str, ocr_text: str) -> str:
     """Volltext der Antwort aus der Texterkennung füllen (das Modell schreibt ihn auf dem Gerät nicht ab)."""
     if not ocr_text:

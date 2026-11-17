@@ -1,11 +1,12 @@
 """Der Arbeitsablauf: bei KAI melden, Auftrag holen, Seite vorbereiten, Modell fragen, Ergebnis zurück.
-Zwei Auftragsarten: „lesen“ (Seite → JSON, Bildmodell) und „sprechen“ (Text → Tonspur, Chatterbox in sprecher.py)."""
+Drei Auftragsarten: „lesen“ (Seite → JSON, Bildmodell), „chat“ (Gespräch aus KAI, Antwort wird beim Schreiben
+zurückgemeldet) und „sprechen“ (Text → Tonspur, Chatterbox in sprecher.py)."""
 import base64
 import threading
 import time
 
 from .einstellungen import MODELLE
-from .engine import Engine, antwort_ergaenzen
+from .engine import Engine, antwort_ergaenzen, chat_nachrichten
 from .kai import Kai, KaiFehler
 from .seite import texterkennung, zu_png
 from .sprecher import Sprecher
@@ -56,7 +57,7 @@ class Arbeiter(threading.Thread):
                 self.status("bereit")
                 a = self.kai.auftrag()
                 if a:
-                    self.sprechen(a) if a.get("art") == "sprechen" else self.bearbeiten(a)
+                    {"sprechen": self.sprechen, "chat": self.chatten}.get(a.get("art"), self.bearbeiten)(a)
             except KaiFehler as e:
                 self.status("getrennt"); self.melden(str(e)); self.halt.wait(15)
             except Exception as e:  # noqa: BLE001
@@ -87,6 +88,29 @@ class Arbeiter(threading.Thread):
 
     def stoppen(self) -> None:
         self.halt.set(); self.sprecher.stoppen()
+
+    def chatten(self, a: dict) -> None:
+        """Gespräch aus KAI: Antwort schreiben, den Zwischenstand alle 0,7 s melden (in KAI erscheint sie beim Schreiben)."""
+        self.status("chattet")
+        beginn, letzt, weiter = time.time(), [0.0], [True]
+
+        def beim_schreiben(text: str) -> bool:
+            if time.time() - letzt[0] > 0.7:
+                letzt[0] = time.time(); weiter[0] = self.kai.zwischenstand(a["id"], text)
+            return weiter[0]
+        try:
+            ocr = texterkennung if a.get("ocr") else (lambda png: "")
+            nachrichten = chat_nachrichten(a.get("nachrichten") or [], bild=lambda s: zu_png(s["data"], s.get("mime", "image/jpeg")), ocr=ocr)
+            text, ein, aus = self.engine.chat(nachrichten, int(a.get("max_tokens") or 1500), float(a.get("temperatur") or 0.3), beim_schreiben)
+            dauer = int((time.time() - beginn) * 1000)
+            if weiter[0]:
+                self.kai.ergebnis(a["id"], text=text, dauer_ms=dauer, tokens_ein=ein, tokens_aus=aus)
+            self.erledigt({"id": a["id"], "dauer_s": dauer / 1000, "ok": True, "tokens": ein + aus, "art": "chat", "gestoppt": not weiter[0]})
+        except KaiFehler:
+            raise
+        except Exception as e:  # noqa: BLE001 — Fehler an KAI melden, dort steht er im Chat
+            self.kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
+            self.erledigt({"id": a["id"], "dauer_s": time.time() - beginn, "ok": False, "fehler": str(e), "art": "chat"})
 
     def bearbeiten(self, a: dict) -> None:
         self.status("arbeitet")

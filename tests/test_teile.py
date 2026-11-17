@@ -98,3 +98,17 @@ def test_angefangener_download_zaehlt_als_geladen(tmp_path):
     (tmp_path / "neu.gguf.downloadInProgress").write_bytes(b"y" * 40)
     assert teil_bytes(tmp_path) == 40
     assert ordner_bytes(tmp_path) - teil_bytes(tmp_path) == 100   # Anfangswert: nur das fertige andere Modell
+
+
+def test_chat_nachrichten_bilder_und_texterkennung():
+    from kai_ki.engine import chat_nachrichten
+    n = chat_nachrichten([
+        {"role": "system", "content": "Du bist KAI."},
+        {"role": "user", "content": "Was steht hier?", "seiten": [{"data": "QUJD", "mime": "image/png"}]},
+        {"role": "assistant", "content": "Ein Lieferschein."},
+    ], bild=lambda s: b"PNG", ocr=lambda png: "Relay GmbH")
+    assert n[0] == {"role": "system", "content": "Du bist KAI."}
+    teile = n[1]["content"]
+    assert teile[0]["image_url"]["url"] == "data:image/png;base64,UE5H"
+    assert teile[1]["type"] == "text" and teile[1]["text"].startswith("Was steht hier?") and "Relay GmbH" in teile[1]["text"]
+    assert n[2] == {"role": "assistant", "content": "Ein Lieferschein."}
