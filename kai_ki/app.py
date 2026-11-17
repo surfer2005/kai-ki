@@ -78,7 +78,7 @@ class Fenster(QMainWindow):
         lay.addWidget(g3, 1)
         # Reiter: „Gerät“ (wie bisher) und „Chat“ (direkt mit dem Modell auf diesem Mac, Peter 2026-11-17)
         reiter = QTabWidget(); reiter.addTab(w, "Gerät")
-        self.chat = ChatFenster(lambda: self.engine); reiter.addTab(self.chat, "Chat")
+        self.chat = ChatFenster(lambda: self.engine, self.hoerer_holen, self.sprecher_holen, self.cfg, speichern); reiter.addTab(self.chat, "Chat")
         self.setCentralWidget(reiter); self.resize(680, 720)
 
         self.tray = QSystemTrayIcon(punkt(STATUS_FARBE["aus"]), self)
@@ -86,6 +86,24 @@ class Fenster(QMainWindow):
         menu.addAction(a1); menu.addAction(a2); self.tray.setContextMenu(menu); self.tray.setToolTip("KAI KI"); self.tray.show()
         if self.cfg.get("token") and self.cfg.get("kai_url"):
             self.starten()
+
+    def hoerer_holen(self):
+        """Whisper für das Mikrofon im Chat-Reiter: derselbe Hörer wie für KAI-Aufträge (sonst liefe das Modell doppelt)."""
+        if self.arbeiter:
+            return self.arbeiter.hoerer
+        if not getattr(self, "_hoerer", None):
+            from .hoerer import Hoerer
+            self._hoerer = Hoerer()
+        return self._hoerer
+
+    def sprecher_holen(self):
+        """Chatterbox für „Vorlesen“ im Chat-Reiter: derselbe Sprecher wie für KAI-Aufträge."""
+        if self.arbeiter:
+            return self.arbeiter.sprecher
+        if not getattr(self, "_sprecher", None):
+            from .sprecher import Sprecher
+            self._sprecher = Sprecher()
+        return self._sprecher
 
     # ---------- Aktionen ----------
     def koppeln(self):

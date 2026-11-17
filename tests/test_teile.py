@@ -127,3 +127,20 @@ def test_gespraech_in_der_app():
     assert "Dienstag, der 17.11.2026" in system_text(date(2026, 11, 17))
     md = verlauf_markdown([{"role": "user", "content": "Hallo", "anhang": "ls.pdf"}, {"role": "assistant", "content": "Hallo!"}], laufend="Ich")
     assert md.startswith("**Du:** 📎 ls.pdf") and "**KAI KI:**\n\nHallo!" in md and md.endswith("Ich ▍")
+
+
+def test_mikrofon_aufnahme_wird_wav():
+    import array, io, wave
+    from kai_ki.gespraech import wav_aus_pcm
+    stereo_float = array.array("f", [0.5, -0.5, 1.5, 1.5]).tobytes()         # 2 Frames, 2 Kanäle, einer übersteuert
+    w = wave.open(io.BytesIO(wav_aus_pcm(stereo_float, 48000, 2, True)))
+    assert (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()) == (1, 2, 48000, 2)
+    assert array.array("h", w.readframes(2)).tolist() == [0, 32767]
+    mono = wave.open(io.BytesIO(wav_aus_pcm(array.array("h", [100, -100, 5]).tobytes(), 16000)))
+    assert mono.getnframes() == 3
+
+
+def test_vorlese_text_ohne_markdown():
+    from kai_ki.gespraech import vorlese_text
+    assert vorlese_text("Es sind **2** Meldungen.\n\n| Schiff | Anzahl |\n|---|---|\n| MS-LINDAU | 2 |\n- Punkt") == "Es sind 2 Meldungen. Schiff, Anzahl. MS-LINDAU, 2. Punkt"
+    assert len(vorlese_text("Satz. " * 400)) <= 1500

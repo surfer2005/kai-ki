@@ -24,7 +24,9 @@ anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das 
 ## Chat in der App (ab 0.1.9)
 
 Reiter „Chat“: Fragen direkt an das Modell auf diesem Mac — ohne KAI und ohne Netz, die Antwort erscheint beim Schreiben.
-Mit „+“ ein Bild oder PDF (erste Seite, mit Texterkennung) anhängen. Das Modell muss im Reiter „Gerät“ gestartet sein. Den
+Eingabe wie in KAI: „+“ hängt ein Bild oder PDF an (erste Seite, mit Texterkennung), 🎙 nimmt die Frage auf (Whisper auf dem Mac,
+ab 0.1.10; macOS fragt beim ersten Mal nach dem Mikrofon), „🔊 Vorlesen“ bzw. das Häkchen „Antworten vorlesen“ spricht Antworten
+mit Chatterbox (eigene Stimmprobe wählbar). Das Modell muss im Reiter „Gerät“ gestartet sein. Den
 Chat mit Mikrofon und KAI-Daten (nur Admin) gibt es in KAI unter Informationen → KI-Chat; dafür holt die App die Aufträge
 bei KAI ab (Chat ab 0.1.7, Mikrofon/Whisper ab 0.1.8).
 

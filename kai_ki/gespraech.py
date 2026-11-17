@@ -25,3 +25,40 @@ def verlauf_markdown(nachrichten: list, laufend: str | None = None) -> str:
     if laufend is not None:
         teile.append(f"**KAI KI:**\n\n{laufend or '…'} ▍")
     return "\n\n---\n\n".join(teile)
+
+
+def wav_aus_pcm(roh: bytes, rate: int, kanaele: int = 1, gleitkomma: bool = False) -> bytes:
+    """Mikrofon-Aufnahme (Qt liefert rohe Samples: Int16 oder Float32, ggf. mehrere Kanäle) → WAV 16 bit mono.
+    Die Rate bleibt; der Hörer rechnet selbst auf 16 kHz um."""
+    import array
+    import io
+    import wave
+    if gleitkomma:
+        f = array.array("f"); f.frombytes(roh[: len(roh) // 4 * 4])
+        werte = [max(-1.0, min(1.0, x)) for x in f]
+        s = array.array("h", (int(x * 32767) for x in werte))
+    else:
+        s = array.array("h"); s.frombytes(roh[: len(roh) // 2 * 2])
+    if kanaele > 1:                                   # auf einen Kanal mitteln
+        s = array.array("h", (int(sum(s[i:i + kanaele]) / kanaele) for i in range(0, len(s) - kanaele + 1, kanaele)))
+    puffer = io.BytesIO()
+    with wave.open(puffer, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(int(rate)); w.writeframes(s.tobytes())
+    return puffer.getvalue()
+
+
+def vorlese_text(md: str, grenze: int = 1500) -> str:
+    """Antwort zum Vorlesen: Markdown weg, Tabellen als Sätze, höchstens `grenze` Zeichen (wie „Vorlesen“ in KAI)."""
+    import re
+    zeilen = [z for z in str(md or "").splitlines() if not re.match(r"^\s*\|?\s*:?-{2,}", z)]
+    zeilen = [", ".join(c.strip() for c in z.split("|") if c.strip()) + "." if z.strip().startswith("|") else z for z in zeilen]
+    t = "\n".join(zeilen)
+    t = re.sub(r"```[\s\S]*?```", " ", t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"^\s*[-•]\s+|^\s*\d+[.)]\s+", "", t, flags=re.M)
+    t = re.sub(r"[*_`#>]", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) <= grenze:
+        return t
+    k = t.rfind(". ", 0, grenze)
+    return t[: k + 1] if k > grenze * 0.4 else t[:grenze]

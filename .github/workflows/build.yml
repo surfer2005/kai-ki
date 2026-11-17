@@ -21,6 +21,9 @@ jobs:
         run: |
           pyinstaller --noconfirm --windowed --name "KAI KI" --osx-bundle-identifier de.bsb.kai-ki \
             --collect-all pypdfium2 --hidden-import Vision --hidden-import Quartz --hidden-import Foundation start.py
+          # Mikrofon (Chat-Reiter): ohne diese Beschreibung beendet macOS die App beim ersten Zugriff; danach neu (ad hoc) signieren
+          plutil -insert NSMicrophoneUsageDescription -string "KAI KI nimmt Fragen per Mikrofon auf und erkennt sie auf diesem Mac (Whisper). Nichts verlässt das Gerät." "dist/KAI KI.app/Contents/Info.plist"
+          codesign --force --deep --sign - "dist/KAI KI.app"
           VERSION=$(python -c "import kai_ki; print(kai_ki.__version__)")
           ditto -c -k --keepParent "dist/KAI KI.app" "KAI-KI-macOS-${VERSION}.zip"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
