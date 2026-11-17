@@ -61,7 +61,7 @@ class Fenster(QMainWindow):
         self.modell = QComboBox()
         for k, m in MODELLE.items():
             self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
-        self.modell.setCurrentIndex(max(0, list(MODELLE).index(self.cfg.get("modell", VORGABE_MODELL))))
+        self.modell.setCurrentIndex(max(0, list(MODELLE).index(self.cfg.get("modell", VORGABE_MODELL)) if self.cfg.get("modell", VORGABE_MODELL) in MODELLE else 0))
         self.modell.currentIndexChanged.connect(self.modell_gewechselt)
         zeile = QHBoxLayout(); self.start_knopf = QPushButton("Starten"); self.start_knopf.clicked.connect(self.starten)
         self.stopp_knopf = QPushButton("Anhalten"); self.stopp_knopf.clicked.connect(self.anhalten); self.stopp_knopf.setEnabled(False)

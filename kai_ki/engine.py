@@ -92,14 +92,15 @@ def ordner_bytes(p: Path) -> int:
         return 0
 
 
-def ladestand(geladen: int, erwartet: int, laedt: bool) -> tuple[str, int]:
-    """Text + Prozent für die Anzeige. `laedt` = die Größe ändert sich noch (Download läuft)."""
+def ladestand(neu: int, erwartet: int, laedt: bool, sekunden: float) -> tuple[str, int]:
+    """Text + Prozent für die Anzeige. `neu` = seit dem Start hinzugekommene Bytes im Modell-Ordner (dort liegen auch
+    andere, schon geladene Modelle — die zählen nicht), `laedt` = die Größe ändert sich noch, `sekunden` seit dem Start."""
     gb = lambda b: f"{b / 1e9:.1f}".replace(".", ",")
-    pz = max(0, min(99, int(geladen * 100 / erwartet))) if erwartet else 0
+    pz = max(0, min(99, int(neu * 100 / erwartet))) if erwartet else 0
     if laedt:
-        return f"Download {gb(geladen)} von ca. {gb(erwartet)} GB ({pz} %)", pz
-    if geladen < erwartet * 0.8:
-        return f"Download wartet … {gb(geladen)} von ca. {gb(erwartet)} GB", pz
+        return f"Download {gb(neu)} von ca. {gb(erwartet)} GB ({pz} %)", pz
+    if neu == 0 and sekunden < 20:
+        return "Modell wird vorbereitet …", 0
     return "Modell wird in den Arbeitsspeicher geladen …", 99
 
 
@@ -130,11 +131,12 @@ class Engine:
         log = open(self.log, "ab")
         self.proc = subprocess.Popen(
             [str(server), "-hf", MODELLE[self.modell_key]["hf"], "--host", "127.0.0.1", "--port", str(PORT),
-             "-c", "12288", "-ngl", "99"],
+             "-c", "12288", "-ngl", "99", *MODELLE[self.modell_key].get("args", [])],
             stdout=log, stderr=subprocess.STDOUT, env=umgebung, cwd=str(server.parent))
         ende = time.time() + warten_s
         erwartet = MODELLE[self.modell_key].get("bytes", 0)
-        vorher, geaendert = ordner_bytes(MODELL_ORDNER), 0.0
+        anfang = ordner_bytes(MODELL_ORDNER)
+        vorher, geaendert, beginn = anfang, 0.0, time.time()
         while time.time() < ende:
             if self.proc.poll() is not None:
                 raise EngineFehler(f"Rechenprogramm beendet (Code {self.proc.returncode}) — siehe {self.log}")
@@ -144,7 +146,7 @@ class Engine:
             jetzt_b = ordner_bytes(MODELL_ORDNER)
             if jetzt_b != vorher:
                 vorher, geaendert = jetzt_b, time.time()
-            fortschritt(*ladestand(jetzt_b, erwartet, time.time() - geaendert < 10))
+            fortschritt(*ladestand(max(0, jetzt_b - anfang), erwartet, time.time() - geaendert < 10, time.time() - beginn))
             time.sleep(2)
         raise EngineFehler("Modell wurde nicht rechtzeitig bereit")
 
@@ -163,8 +165,10 @@ class Engine:
         nachricht = [{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}},
             {"type": "text", "text": aufgabe}]}]
-        r = requests.post(f"http://127.0.0.1:{PORT}/v1/chat/completions", timeout=1800, json={
-            "messages": nachricht, "max_tokens": max_tokens, "temperature": 0.1, "response_format": {"type": "json_object"}})
+        anfrage = {"messages": nachricht, "max_tokens": max_tokens, "temperature": 0.1, "response_format": {"type": "json_object"}}
+        if MODELLE[self.modell_key].get("denken_aus"):      # Qwen3.5: kein „Nachdenken“ vor der Antwort (sonst minutenlang)
+            anfrage["chat_template_kwargs"] = {"enable_thinking": False}
+        r = requests.post(f"http://127.0.0.1:{PORT}/v1/chat/completions", timeout=1800, json=anfrage)
         if r.status_code >= 400:
             raise EngineFehler(f"Modell: {r.text[:300]}")
         j = r.json()

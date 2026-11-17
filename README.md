@@ -8,7 +8,7 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
    *Programme* ziehen, beim ersten Öffnen **Rechtsklick → Öffnen** (nicht bei Apple signiert).
 2. In KAI: *Einstellungen → Schnittstellen → KI* → Anbieter „Eigene KI auf einem Gerät“ → Name eintragen → **Gerät koppeln**.
 3. In der App KAI-Adresse und Code eintragen → **Koppeln**. Beim ersten Start lädt die App das Rechenprogramm
-   (llama.cpp, macOS arm64) und das Modell (Qwen2.5-VL, 3 bzw. 6 GB) — das dauert einmalig.
+   (llama.cpp, macOS arm64) und das gewählte Modell (Qwen3-VL 8B empfohlen, ca. 6 GB; außerdem Qwen3-VL 8B Q8, Qwen3.5 9B, Qwen2.5-VL 7B/3B) — das dauert einmalig. Jedes Modell liegt danach im Ordner `modelle`; nicht mehr gebrauchte lassen sich dort löschen.
 
 ## Wie es arbeitet
 - KAI legt je Seite einen Auftrag ab; die App holt ihn ab, macht aus dem PDF ein Bild (pdfium), liest den Text mit

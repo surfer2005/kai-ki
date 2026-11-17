@@ -48,6 +48,15 @@ def test_llama_ausgabe_vorabversion_und_tar(tmp_path):
 
 def test_ladestand_text():
     from kai_ki.engine import ladestand
-    assert ladestand(2_300_000_000, 5_800_000_000, True) == ("Download 2,3 von ca. 5,8 GB (39 %)", 39)
-    assert ladestand(5_900_000_000, 5_800_000_000, False) == ("Modell wird in den Arbeitsspeicher geladen …", 99)
-    assert ladestand(0, 5_800_000_000, False)[0].startswith("Download wartet")
+    assert ladestand(2_300_000_000, 5_800_000_000, True, 60) == ("Download 2,3 von ca. 5,8 GB (39 %)", 39)
+    assert ladestand(5_900_000_000, 5_800_000_000, False, 600) == ("Modell wird in den Arbeitsspeicher geladen …", 99)
+    assert ladestand(0, 5_800_000_000, False, 5)[0] == "Modell wird vorbereitet …"
+    assert ladestand(0, 5_800_000_000, False, 60)[0].startswith("Modell wird in den Arbeitsspeicher")   # schon geladen
+
+
+def test_modelle_vollstaendig():
+    from kai_ki.einstellungen import MODELLE, VORGABE_MODELL
+    assert VORGABE_MODELL in MODELLE
+    for m in MODELLE.values():
+        assert m["hf"] and m["name"] and m["bytes"] > 1e9
+    assert MODELLE["qwen35-9b"]["denken_aus"] and "--reasoning" in MODELLE["qwen35-9b"]["args"]
