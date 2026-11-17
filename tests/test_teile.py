@@ -68,3 +68,25 @@ def test_fremdes_rechenprogramm_nur_llama():
     assert _laeuft(os.getpid())
     assert not _ist_llama(os.getpid())          # die eigene App (python) wird nie beendet
     assert not _laeuft(999999999)
+
+
+def test_saetze_fuer_den_sprecher():
+    from kai_ki.sprecher import saetze
+    assert saetze("Das ist KAI. Ein System für die ganze Flotte.") == ["Das ist KAI. Ein System für die ganze Flotte."]
+    lang = "Bordbuch und Meldungen an Bord, " * 15 + "fertig."
+    teile = saetze(lang)
+    assert all(len(t) <= 260 for t in teile) and "".join(teile).replace(" ", "") == lang.replace(" ", "")
+    assert saetze("") == []
+
+
+def test_antwort_lesen_ueberspringt_fremde_zeilen():
+    import io
+    from kai_ki.sprecher import antwort_lesen
+    strom = io.StringIO('loaded PerthNet\n{"bereit": true}\n')
+    assert antwort_lesen(strom) == {"bereit": True}
+    assert antwort_lesen(strom) is None
+
+
+def test_dienst_ist_gueltiges_python():
+    from kai_ki.sprecher import DIENST
+    compile(DIENST, "dienst.py", "exec")

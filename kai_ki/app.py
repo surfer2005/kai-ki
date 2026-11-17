@@ -15,8 +15,8 @@ from .engine import Engine
 from .kai import Kai, KaiFehler
 
 STATUS_TEXT = {"aus": "nicht gestartet", "startet": "Modell wird geladen …", "bereit": "bereit – wartet auf Aufträge",
-               "arbeitet": "liest gerade eine Seite …", "getrennt": "KAI nicht erreichbar", "fehler": "Fehler"}
-STATUS_FARBE = {"bereit": "#2e7d5b", "arbeitet": "#1f6e9c", "startet": "#b07a17", "getrennt": "#b3412f", "fehler": "#b3412f", "aus": "#8a8f8c"}
+               "arbeitet": "liest gerade eine Seite …", "spricht": "spricht gerade einen Text …", "getrennt": "KAI nicht erreichbar", "fehler": "Fehler"}
+STATUS_FARBE = {"bereit": "#2e7d5b", "arbeitet": "#1f6e9c", "spricht": "#1f6e9c", "startet": "#b07a17", "getrennt": "#b3412f", "fehler": "#b3412f", "aus": "#8a8f8c"}
 
 
 class Bote(QObject):
@@ -113,7 +113,7 @@ class Fenster(QMainWindow):
 
     def anhalten(self):
         if self.arbeiter:
-            self.arbeiter.halt.set(); self.arbeiter = None
+            self.arbeiter.stoppen(); self.arbeiter = None
         if self.engine:
             self.engine.stoppen(); self.engine = None
         self.status_setzen("aus"); self.start_knopf.setEnabled(True); self.stopp_knopf.setEnabled(False)
@@ -134,7 +134,11 @@ class Fenster(QMainWindow):
 
     def erledigt(self, e: dict):
         zeit = f"{datetime.now():%H:%M:%S}"
-        self.liste.insertItem(0, f"{zeit}  Auftrag {e['id']}: " + (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" if e["ok"] else f"Fehler – {e.get('fehler', '')}"))
+        if e.get("art") == "sprechen":
+            text = f"{e['dauer_s']:.0f} s gerechnet, {e.get('ton_s', 0):.0f} s Ton" if e["ok"] else f"Fehler – {e.get('fehler', '')}"
+            self.liste.insertItem(0, f"{zeit}  Sprechen {e['id']}: {text}")
+        else:
+            self.liste.insertItem(0, f"{zeit}  Auftrag {e['id']}: " + (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" if e["ok"] else f"Fehler – {e.get('fehler', '')}"))
         while self.liste.count() > 200:
             self.liste.takeItem(self.liste.count() - 1)
 

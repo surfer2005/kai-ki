@@ -55,11 +55,12 @@ class Kai:
         info = {**geraete_info(), "zustand": zustand, "fortschritt": fortschritt, "prozent": prozent}
         return self._post("hallo", {"version": __version__, "modell": modell, "info": info})
 
-    def auftrag(self, warten_ms: int = 20000) -> dict | None:
-        r = self._post("auftrag", {"warten_ms": warten_ms}, timeout=warten_ms / 1000 + 30)
+    def auftrag(self, warten_ms: int = 20000, arten: tuple = ("lesen", "sprechen")) -> dict | None:
+        r = self._post("auftrag", {"warten_ms": warten_ms, "arten": list(arten)}, timeout=warten_ms / 1000 + 30)
         return r if r.get("id") else None
 
     def ergebnis(self, auftrag_id: int, text: str | None = None, fehler: str | None = None, dauer_ms: int | None = None,
-                 tokens_ein: int | None = None, tokens_aus: int | None = None) -> None:
+                 tokens_ein: int | None = None, tokens_aus: int | None = None, ton: str | None = None) -> None:
+        """ton = WAV als base64 (Auftragsart „sprechen“)."""
         self._post("ergebnis", {"id": auftrag_id, "text": text, "fehler": fehler, "dauer_ms": dauer_ms,
-                                "tokens_ein": tokens_ein, "tokens_aus": tokens_aus}, timeout=60)
+                                "tokens_ein": tokens_ein, "tokens_aus": tokens_aus, "ton": ton}, timeout=300)

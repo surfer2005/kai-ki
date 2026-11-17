@@ -20,3 +20,13 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 ## Entwickeln
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
+
+## Sprechen (ab 0.1.5)
+
+Zweite Auftragsart: KAI schickt einen Text, die App macht daraus eine Tonspur (WAV) — für Erklärvideos und Filme.
+Modell: **Chatterbox Multilingual** (Resemble AI, MIT-Lizenz, Deutsch). Weil PyTorch für die App zu groß ist, richtet die App
+beim ersten Sprechauftrag eine eigene Umgebung ein (`~/Library/Application Support/KAI-KI/sprecher`): `uv` (Astral) →
+Python 3.11 → `chatterbox-tts==0.1.7`, danach lädt der Sprecher-Dienst das Modell von Hugging Face (einige GB, einmalig).
+Das dauert beim ersten Mal einige Minuten; der Stand steht in KAI in der Gerätezeile. Protokoll: `sprecher/sprecher.log`.
+Stimmproben (10–30 s echte deutsche Sprache) liegen in KAI (Einstellungen → Schnittstellen → KI → Sprechen) und reisen mit
+dem Auftrag; ohne Probe nimmt das Modell seine Standardstimme (im Deutschen evtl. mit englischem Klang).

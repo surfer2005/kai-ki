@@ -1,4 +1,6 @@
-"""Der Arbeitsablauf: bei KAI melden, Auftrag holen, Seite vorbereiten, Modell fragen, Ergebnis zurück."""
+"""Der Arbeitsablauf: bei KAI melden, Auftrag holen, Seite vorbereiten, Modell fragen, Ergebnis zurück.
+Zwei Auftragsarten: „lesen“ (Seite → JSON, Bildmodell) und „sprechen“ (Text → Tonspur, Chatterbox in sprecher.py)."""
+import base64
 import threading
 import time
 
@@ -6,6 +8,7 @@ from .einstellungen import MODELLE
 from .engine import Engine, antwort_ergaenzen
 from .kai import Kai, KaiFehler
 from .seite import texterkennung, zu_png
+from .sprecher import Sprecher
 
 
 def aufgabe_mit_texterkennung(aufgabe: str, ocr_text: str) -> str:
@@ -22,6 +25,7 @@ class Arbeiter(threading.Thread):
         self.kai, self.engine = kai, engine
         self.melden, self.erledigt, self.status = melden, erledigt, status
         self.halt = threading.Event()
+        self.sprecher = Sprecher()
 
     def melden_kai(self, zustand: str, fortschritt: str | None = None, prozent: int | None = None) -> None:
         """Zustand an KAI (Gerätezeile); ohne Verbindung still weiter — das Laden hängt nicht an KAI."""
@@ -52,11 +56,37 @@ class Arbeiter(threading.Thread):
                 self.status("bereit")
                 a = self.kai.auftrag()
                 if a:
-                    self.bearbeiten(a)
+                    self.sprechen(a) if a.get("art") == "sprechen" else self.bearbeiten(a)
             except KaiFehler as e:
                 self.status("getrennt"); self.melden(str(e)); self.halt.wait(15)
             except Exception as e:  # noqa: BLE001
                 self.melden(f"Unerwarteter Fehler: {e}"); self.halt.wait(15)
+
+    def sprechen(self, a: dict) -> None:
+        """Text → Tonspur. Beim ersten Mal wird der Sprecher eingerichtet (einige Minuten) — der Stand geht an KAI."""
+        self.status("spricht")
+        beginn, letzt = time.time(), [0.0]
+
+        def fortschritt(text: str) -> None:
+            self.status(text)
+            if time.time() - letzt[0] > 15:
+                letzt[0] = time.time(); self.melden_kai("laedt", text)
+        try:
+            wav, sekunden = self.sprecher.sprechen(a.get("text") or "", a.get("sprache") or "de", a.get("lebhaft"), a.get("tempo"),
+                                                   a.get("stimme"), fortschritt=fortschritt)
+            dauer = int((time.time() - beginn) * 1000)
+            self.kai.ergebnis(a["id"], text=f"{sekunden:.1f} s Ton", dauer_ms=dauer, ton=base64.b64encode(wav).decode("ascii"))
+            self.erledigt({"id": a["id"], "dauer_s": dauer / 1000, "ok": True, "tokens": 0, "art": "sprechen", "ton_s": sekunden})
+        except KaiFehler:
+            raise
+        except Exception as e:  # noqa: BLE001 — Fehler an KAI melden, dort steht er bei der Hörprobe
+            self.kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
+            self.erledigt({"id": a["id"], "dauer_s": time.time() - beginn, "ok": False, "fehler": str(e), "art": "sprechen"})
+        finally:
+            self.melden_kai("bereit")
+
+    def stoppen(self) -> None:
+        self.halt.set(); self.sprecher.stoppen()
 
     def bearbeiten(self, a: dict) -> None:
         self.status("arbeitet")
