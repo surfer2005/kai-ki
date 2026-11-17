@@ -60,3 +60,11 @@ def test_modelle_vollstaendig():
     for m in MODELLE.values():
         assert m["hf"] and m["name"] and m["bytes"] > 1e9
     assert MODELLE["qwen35-9b"]["denken_aus"] and "--reasoning" in MODELLE["qwen35-9b"]["args"]
+
+
+def test_fremdes_rechenprogramm_nur_llama():
+    import os
+    from kai_ki.engine import _ist_llama, _laeuft
+    assert _laeuft(os.getpid())
+    assert not _ist_llama(os.getpid())          # die eigene App (python) wird nie beendet
+    assert not _laeuft(999999999)

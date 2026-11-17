@@ -149,6 +149,7 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     f = Fenster(); f.show()
+    app.aboutToQuit.connect(f.anhalten)    # Cmd+Q / Abmelden: das Rechenprogramm mit beenden (lief sonst weiter)
     sys.exit(app.exec())
 
 

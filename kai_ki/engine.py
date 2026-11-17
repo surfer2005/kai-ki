@@ -3,7 +3,9 @@ Beim ersten Start lädt die App das Programm (offizielle Ausgabe von github.com/
 llama.cpp das gewählte Modell von Hugging Face. Danach läuft alles ohne Netz außer der Verbindung zu KAI."""
 import io
 import json
+import atexit
 import os
+import signal
 import stat
 import subprocess
 import tarfile
@@ -16,6 +18,7 @@ import requests
 from .einstellungen import MODELLE, ORDNER
 
 PORT = 18737
+PID_DATEI = ORDNER / "llama-server.pid"   # Rechenprogramm dieser App — ein übrig gebliebenes wird beim Start beendet
 PROGRAMM = ORDNER / "llama"
 MODELL_ORDNER = ORDNER / "modelle"
 
@@ -104,6 +107,49 @@ def ladestand(neu: int, erwartet: int, laedt: bool, sekunden: float) -> tuple[st
     return "Modell wird in den Arbeitsspeicher geladen …", 99
 
 
+def _laeuft(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _ist_llama(pid: int) -> bool:
+    try:
+        name = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=5).stdout
+        return "llama-server" in name
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def uebrig_gebliebene_beenden(melden=print) -> None:
+    """Ein Rechenprogramm, das nicht zu dieser Engine gehört (z. B. von der vorigen App-Version oder nach Cmd+Q übrig),
+    beenden — sonst meldete die App „bereit“ mit dem neuen Modellnamen und rechnete mit dem alten Modell weiter
+    (17.11.2026: Vergleich lief so versehentlich mit Qwen2.5 statt Qwen3-VL). Nur Prozesse namens llama-server."""
+    pids = set()
+    try:
+        pids.add(int(PID_DATEI.read_text().strip()))
+    except (OSError, ValueError):
+        pass
+    try:   # wer belegt unseren Anschluss?
+        out = subprocess.run(["lsof", "-ti", f"tcp:{PORT}", "-sTCP:LISTEN"], capture_output=True, text=True, timeout=5).stdout
+        pids.update(int(x) for x in out.split() if x.strip().isdigit())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for pid in pids:
+        if pid != os.getpid() and _laeuft(pid) and _ist_llama(pid):
+            melden("Altes Rechenprogramm wird beendet …")
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                if not _laeuft(pid):
+                    break
+                time.sleep(0.2)
+            if _laeuft(pid):
+                os.kill(pid, signal.SIGKILL)
+    PID_DATEI.unlink(missing_ok=True)
+
+
 class Engine:
     def __init__(self, modell_key: str, melden=print):
         self.modell_key = modell_key if modell_key in MODELLE else next(iter(MODELLE))
@@ -122,8 +168,9 @@ class Engine:
             return False
 
     def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None) -> None:
-        if self.bereit():
-            return
+        if self.proc and self.proc.poll() is None and self.bereit():
+            return                                  # läuft schon — und zwar unseres, mit unserem Modell
+        uebrig_gebliebene_beenden(self.melden)
         server = programm_laden(self.melden)
         MODELL_ORDNER.mkdir(parents=True, exist_ok=True)
         umgebung = {**os.environ, "LLAMA_CACHE": str(MODELL_ORDNER)}
@@ -133,6 +180,11 @@ class Engine:
             [str(server), "-hf", MODELLE[self.modell_key]["hf"], "--host", "127.0.0.1", "--port", str(PORT),
              "-c", "12288", "-ngl", "99", *MODELLE[self.modell_key].get("args", [])],
             stdout=log, stderr=subprocess.STDOUT, env=umgebung, cwd=str(server.parent))
+        try:
+            PID_DATEI.write_text(str(self.proc.pid))
+        except OSError:
+            pass
+        atexit.register(self.stoppen)               # auch bei Cmd+Q / Absturz der Oberfläche nicht weiterlaufen lassen
         ende = time.time() + warten_s
         erwartet = MODELLE[self.modell_key].get("bytes", 0)
         anfang = ordner_bytes(MODELL_ORDNER)
@@ -157,6 +209,8 @@ class Engine:
                 self.proc.wait(10)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+        if self.proc:
+            PID_DATEI.unlink(missing_ok=True)
         self.proc = None
 
     def fragen(self, png: bytes, aufgabe: str, max_tokens: int) -> tuple[str, int, int]:
