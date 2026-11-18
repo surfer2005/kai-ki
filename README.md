@@ -21,6 +21,16 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
 
+## Reiter „Training“ (ab 0.1.18)
+
+Nachtrainieren ohne Terminal (Peter 2026-11-18: „Training-Zip mit in die App packen, gut für Laien“): vier Schritte untereinander —
+**Einrichten** (einmalig; wie beim Sprecher über uv → Python 3.11 → mlx-lm, dazu der Umwandler aus llama.cpp in der Version des
+Rechenprogramms), **Aus KAI holen** (über die Kopplung, `POST /api/ki-geraet/training`, in KAI im Audit; „Stattdessen eine Datei
+wählen …“ für eine heruntergeladene Datei), **Training starten** (hält die KI an, Fortschrittsbalken aus den Zeilen von
+`training/trainieren.py`, Abbrechen beendet die ganze Prozessgruppe), **Ergebnis** („Angepasstes Modell verwenden“ / „Zurück zum
+Grundmodell“). Die geholten Trainingsdaten werden nach erfolgreichem Training gelöscht. Die Skripte stecken im App-Paket
+(`--add-data training:training`, beim Bauen geprüft) — eine Quelle für App und Trainings-Zip.
+
 ## Eigenes Modell „KAI angepasst“ (ab 0.1.17)
 
 Mit dem Werkzeug im Ordner `training/` (bei jeder Version als `KAI-KI-Training-….zip` unter Releases) lässt sich das

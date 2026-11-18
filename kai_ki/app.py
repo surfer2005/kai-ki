@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QGr
 from . import __version__
 from .arbeiter import Arbeiter
 from .chatfenster import ChatFenster
+from .trainingfenster import TrainingFenster
 from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, modelle_verfuegbar, speichern, verbindungen
 from .engine import Engine
 from .kai import Kai, KaiFehler, adresse_ordnen
@@ -89,13 +90,7 @@ class Fenster(QMainWindow):
         f2.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         g2.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.modell = QComboBox()
-        auswahl = modelle_verfuegbar()          # das eigene Modell („KAI angepasst“) erst, wenn es trainiert ist
-        gewaehlt = self.cfg.get("modell", VORGABE_MODELL)
-        if gewaehlt not in auswahl:          # z. B. eigenes Modell gelöscht → Grundmodell
-            gewaehlt = self.cfg["modell"] = VORGABE_MODELL
-        for k, m in auswahl.items():
-            self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
-        self.modell.setCurrentIndex(max(0, list(auswahl).index(gewaehlt) if gewaehlt in auswahl else 0))
+        self.modelle_fuellen(self.cfg.get("modell", VORGABE_MODELL))
         self.modell.currentIndexChanged.connect(self.modell_gewechselt)
         zeile = QHBoxLayout(); self.start_knopf = QPushButton("Starten"); self.start_knopf.clicked.connect(self.starten)
         self.stopp_knopf = QPushButton("Anhalten"); self.stopp_knopf.clicked.connect(self.anhalten); self.stopp_knopf.setEnabled(False)
@@ -115,6 +110,8 @@ class Fenster(QMainWindow):
         # Reiter: „Gerät“ (wie bisher) und „Chat“ (direkt mit dem Modell auf diesem Mac, Peter 2026-11-17)
         reiter = QTabWidget(); reiter.addTab(rolle, "Gerät")
         self.chat = ChatFenster(lambda: self.engine, self.hoerer_holen, self.sprecher_holen, self.cfg, speichern); reiter.addTab(self.chat, "Chat")
+        # „Training“ (Weg 3, Peter 2026-11-18: Training-Zip in die App, gut für Laien): einrichten, Daten aus KAI holen, trainieren
+        self.training = TrainingFenster(self.cfg, self.laeuft, self.anhalten, self.modell_verwenden); reiter.addTab(self.training, "Training")
         self.setCentralWidget(reiter)
         # Startgröße: so hoch, dass alles ohne Scrollen passt, aber nie höher als der Bildschirm
         bild = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
@@ -166,7 +163,7 @@ class Fenster(QMainWindow):
         for k in ("kai_url", "token", "name"):     # alte Einzel-Felder nicht mehr pflegen
             self.cfg.pop(k, None)
         speichern(self.cfg)
-        self.code.clear(); self.adresse.clear(); self.verbindungen_zeigen()
+        self.code.clear(); self.adresse.clear(); self.verbindungen_zeigen(); self.training.auffrischen()
         self.anhalten(); self.starten()
 
     def verbindung_entfernen(self):
@@ -177,9 +174,33 @@ class Fenster(QMainWindow):
         if QMessageBox.question(self, "KAI KI", f"Verbindung „{bezeichnung(v['kai_url'])}“ ({v['kai_url']}) entfernen? Die App holt dort dann keine Aufträge mehr.") != QMessageBox.Yes:
             return
         self.cfg["verbindungen"].pop(i); self.cfg.pop("kai_url", None); self.cfg.pop("token", None); speichern(self.cfg)
-        self.anhalten(); self.verbindungen_zeigen()
+        self.anhalten(); self.verbindungen_zeigen(); self.training.auffrischen()
         if self.cfg["verbindungen"]:
             self.starten()
+
+    def modelle_fuellen(self, gewaehlt: str) -> str:
+        """Modell-Auswahl füllen — das eigene Modell („KAI angepasst“) erst, wenn es trainiert ist; fehlt das gewählte → Grundmodell."""
+        auswahl = modelle_verfuegbar()
+        if gewaehlt not in auswahl:
+            gewaehlt = VORGABE_MODELL
+        self.cfg["modell"] = gewaehlt
+        self.modell.blockSignals(True)
+        self.modell.clear()
+        for k, m in auswahl.items():
+            self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
+        self.modell.setCurrentIndex(max(0, list(auswahl).index(gewaehlt) if gewaehlt in auswahl else 0))
+        self.modell.blockSignals(False)
+        return gewaehlt
+
+    def modell_verwenden(self, key):
+        """Aus dem Reiter „Training“: angepasstes Modell (key) bzw. Grundmodell (None) wählen und starten."""
+        gewaehlt = self.modelle_fuellen(key or VORGABE_MODELL)
+        speichern(self.cfg)
+        self.anhalten()
+        if self.cfg["verbindungen"]:
+            self.starten()
+        name = MODELLE.get(gewaehlt, {}).get("name", gewaehlt)
+        self.tray.showMessage("KAI KI", f"Modell gewählt: {name}", QSystemTrayIcon.Information, 3000)
 
     def modell_gewechselt(self):
         self.cfg["modell"] = self.modell.currentData(); speichern(self.cfg)

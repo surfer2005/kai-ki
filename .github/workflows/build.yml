@@ -20,7 +20,10 @@ jobs:
       - name: App bauen
         run: |
           pyinstaller --noconfirm --windowed --name "KAI KI" --osx-bundle-identifier de.bsb.kai-ki \
-            --collect-all pypdfium2 --hidden-import Vision --hidden-import Quartz --hidden-import Foundation --collect-submodules num2words start.py
+            --collect-all pypdfium2 --hidden-import Vision --hidden-import Quartz --hidden-import Foundation --collect-submodules num2words \
+            --add-data "training:training" start.py
+          # Reiter „Training“ startet training/trainieren.py aus der App — fehlt es im Paket, trainiert niemand
+          find "dist/KAI KI.app" -path "*training/trainieren.py" | grep -q . && find "dist/KAI KI.app" -path "*training/zusammenfuehren.py" | grep -q .
           # Mikrofon (Chat-Reiter): ohne diese Beschreibung beendet macOS die App beim ersten Zugriff; danach neu (ad hoc) signieren
           plutil -insert NSMicrophoneUsageDescription -string "KAI KI nimmt Fragen per Mikrofon auf und erkennt sie auf diesem Mac (Whisper). Nichts verlässt das Gerät." "dist/KAI KI.app/Contents/Info.plist"
           codesign --force --deep --sign - "dist/KAI KI.app"
@@ -40,4 +43,4 @@ jobs:
           body: |
             KAI KI ${{ env.VERSION }} für Mac (Apple Silicon M1–M4).
             Entpacken, „KAI KI“ in den Ordner Programme ziehen, beim ersten Öffnen Rechtsklick → Öffnen (die App ist nicht bei Apple signiert).
-            KAI-KI-Training: Werkzeug zum Nachtrainieren auf dem eigenen Mac (Anleitung in README.md im Ordner).
+            Nachtrainieren: in der App im Reiter „Training“ (ab 0.1.18). KAI-KI-Training = dieselben Skripte für das Terminal (Anleitung in README.md).

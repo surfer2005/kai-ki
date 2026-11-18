@@ -113,7 +113,7 @@ def ausfuehren(befehl, log, mitschreiben=True):
     raus = []
     with open(log, "a", encoding="utf-8") as f, subprocess.Popen(
             [str(x) for x in befehl], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"}) as p:      # Fortschritt sofort zeigen, nicht erst am Ende
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "NO_COLOR": "1"}) as p:   # Fortschritt sofort, ohne Farbcodes
         for zeile in p.stdout:
             raus.append(zeile)
             if mitschreiben:
@@ -218,6 +218,7 @@ def main():
     if not a.behalten:
         f16.unlink(missing_ok=True)
         shutil.rmtree(zusammen, ignore_errors=True)
+        shutil.rmtree(daten, ignore_errors=True)     # Kopien der Trainingsdaten (Fragen aus dem Haus) nicht liegen lassen
 
     info = {"datum": dt.date.today().strftime("%d.%m.%Y"), "basis": basis, "beispiele": len(beispiele), "lernen": len(train),
             "kontrolle": len(kontrolle), "schritte": iters, "fehlerwert_vorher": vorher, "fehlerwert_nachher": nachher,

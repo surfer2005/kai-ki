@@ -43,3 +43,17 @@ def test_kleines_fenster_scrollt_statt_zu_stauchen(fenster):
     f, app = fenster
     f.resize(560, 480); app.processEvents()
     _nicht_gestaucht(f)
+
+
+def test_reiter_training_ohne_kopplung(fenster):
+    """Reiter „Training“ (0.1.18): ohne Kopplung und ohne Daten ist nur „Einrichten“ möglich, nichts ist gestaucht."""
+    f, app = fenster
+    reiter = f.centralWidget()
+    namen = [reiter.tabText(i) for i in range(reiter.count())]
+    assert namen == ["Gerät", "Chat", "Training"]
+    reiter.setCurrentIndex(2); app.processEvents()
+    t = f.training
+    assert not t.holen_knopf.isEnabled() and not t.start_knopf.isEnabled() and not t.abbruch_knopf.isEnabled()
+    assert "koppeln" in t.daten_text.text()
+    for w in (t.einricht_knopf, t.holen_knopf, t.start_knopf, t.quelle):
+        assert w.height() >= w.minimumSizeHint().height()

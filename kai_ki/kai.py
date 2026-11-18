@@ -69,6 +69,11 @@ class Kai:
         r = self._post("auftrag", {"warten_ms": warten_ms, "arten": list(arten)}, timeout=warten_ms / 1000 + 30)
         return r if r.get("id") else None
 
+    def training(self, pruefen: bool = False, routing_je: int = 10) -> dict:
+        """Trainingsdaten (Weg 3) über die Kopplung holen: {zeilen: [JSON je Gespräch], anzahl, aus_protokoll, abfrage_beispiele}.
+        pruefen=True liefert nur die Zahlen. KAI rechnet die Abfrage-Beispiele mit dem Systemcheck — kann eine Weile dauern."""
+        return self._post("training", {"pruefen": pruefen, "routing_je": routing_je}, timeout=600)
+
     def zwischenstand(self, auftrag_id: int, text: str) -> bool:
         """Bisher geschriebener Chat-Text an KAI. False = in KAI gestoppt (oder vergeben) → aufhören zu schreiben."""
         try:
