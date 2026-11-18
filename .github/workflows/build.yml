@@ -27,7 +27,7 @@ jobs:
           VERSION=$(python -c "import kai_ki; print(kai_ki.__version__)")
           ditto -c -k --keepParent "dist/KAI KI.app" "KAI-KI-macOS-${VERSION}.zip"
           # Werkzeug zum Nachtrainieren (Weg 3) als eigene Datei
-          chmod +x training/*.sh
+          rm -rf training/__pycache__; chmod +x training/*.sh
           ditto -c -k --keepParent training "KAI-KI-Training-${VERSION}.zip"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
       - name: Release
