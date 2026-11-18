@@ -90,11 +90,12 @@ class Fenster(QMainWindow):
         g2.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.modell = QComboBox()
         auswahl = modelle_verfuegbar()          # das eigene Modell („KAI angepasst“) erst, wenn es trainiert ist
-        if self.cfg.get("modell", VORGABE_MODELL) not in auswahl:   # z. B. eigenes Modell gelöscht → Grundmodell
-            self.cfg["modell"] = VORGABE_MODELL
+        gewaehlt = self.cfg.get("modell", VORGABE_MODELL)
+        if gewaehlt not in auswahl:          # z. B. eigenes Modell gelöscht → Grundmodell
+            gewaehlt = self.cfg["modell"] = VORGABE_MODELL
         for k, m in auswahl.items():
             self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
-        self.modell.setCurrentIndex(max(0, list(auswahl).index(self.cfg["modell"]) if self.cfg["modell"] in auswahl else 0))
+        self.modell.setCurrentIndex(max(0, list(auswahl).index(gewaehlt) if gewaehlt in auswahl else 0))
         self.modell.currentIndexChanged.connect(self.modell_gewechselt)
         zeile = QHBoxLayout(); self.start_knopf = QPushButton("Starten"); self.start_knopf.clicked.connect(self.starten)
         self.stopp_knopf = QPushButton("Anhalten"); self.stopp_knopf.clicked.connect(self.anhalten); self.stopp_knopf.setEnabled(False)
