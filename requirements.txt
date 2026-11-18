@@ -5,3 +5,4 @@ Pillow==11.0.0
 pyobjc-framework-Vision==10.3.1
 pyobjc-framework-Quartz==10.3.1
 pyinstaller==6.11.1
+num2words==0.5.14

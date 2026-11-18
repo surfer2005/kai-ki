@@ -17,6 +17,7 @@ from pathlib import Path
 import requests
 
 from .einstellungen import ORDNER
+from .sprechtext import sprechtext
 
 UV_VERSION = "0.5.11"
 UV_URL = f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-aarch64-apple-darwin.tar.gz"
@@ -218,7 +219,8 @@ class Sprecher:
             probe = stimme_vorbereiten(__import__("base64").b64decode(stimme["data"]), stimme.get("mime", "audio/wav")) if stimme and stimme.get("data") else None
             ziel = Path(tempfile.mkstemp(suffix=".wav", dir=SPRECHER)[1])
             try:
-                auftrag = {"saetze": saetze(text), "sprache": sprache, "lebhaft": lebhaft, "tempo": tempo, "stimme": probe, "ziel": str(ziel)}
+                # Zahlen, Datum, Uhrzeit, Einheiten und Kürzel in Worte — Chatterbox liest Ziffern sonst falsch (Peter 2026-11-18)
+                auftrag = {"saetze": saetze(sprechtext(text) if sprache == "de" else text), "sprache": sprache, "lebhaft": lebhaft, "tempo": tempo, "stimme": probe, "ziel": str(ziel)}
                 self.proc.stdin.write(json.dumps(auftrag) + "\n"); self.proc.stdin.flush()
                 r = antwort_lesen(self.proc.stdout)
                 if r is None:

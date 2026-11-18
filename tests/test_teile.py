@@ -177,3 +177,27 @@ def test_wiederholung_nur_ohne_anhalten(monkeypatch):
     except E.EngineFehler:
         pass
     assert len(versuche) == 1
+
+
+def test_sprechtext_zahlen_datum_uhrzeit_einheiten():
+    from kai_ki.sprechtext import sprechtext as s
+    assert s("Umsatz 24.099.694,29 €") == "Umsatz rund vierundzwanzig Komma eins Millionen Euro"
+    assert s("Kosten: 920,50 €") == "Kosten: neunhundertzwanzig Euro fünfzig"
+    assert s("1 €") == "ein Euro"
+    assert s("am 17.11.2026") == "am siebzehnten November zweitausendsechsundzwanzig"
+    assert s("Stand 2026-11-17") == "Stand siebzehnter November zweitausendsechsundzwanzig"
+    assert s("Abfahrt 14:10 Uhr") == "Abfahrt vierzehn Uhr zehn"
+    assert s("30 % mehr, 115 km") == "dreißig Prozent mehr, einhundertfünfzehn Kilometer"
+    assert s("MS-STUTTGART und KS-FRIDOLIN") == "M S Stuttgart und K S Fridolin"
+    assert s("1 Meldung, 1 Schiff, 442 Meldungen") == "eine Meldung, ein Schiff, vierhundertzweiundvierzig Meldungen"
+    assert s("412.134 Personen") == "rund vierhundertzwölftausend Personen"
+    assert s("z. B. ca. 3,5 h") == "zum Beispiel circa drei Komma fünf Stunden"
+    assert s("Meldung M-0014") == "Meldung M null null eins vier"
+    assert s("Das ist KAI der BSB.") == "Das ist Kai der B S B."
+
+
+def test_sprechtext_grenzfaelle():
+    from kai_ki.sprechtext import sprechtext as s
+    assert s("vom 11.10.2026, Abfahrt 07:25 – 13 Fahrten") == "vom elften Oktober zweitausendsechsundzwanzig, Abfahrt sieben Uhr fünfundzwanzig, dreizehn Fahrten"
+    assert s("Version 0.1.13") == "Version 0.1.13"
+    assert s("Beleg 074051") == "Beleg null sieben vier null fünf eins"

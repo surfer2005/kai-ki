@@ -21,6 +21,13 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
 
+## Zahlen beim Sprechen (ab 0.1.13)
+
+Vor dem Sprechen schreibt die App Zahlen, Beträge, Datum, Uhrzeit, Einheiten und Kürzel in Worte (`sprechtext.py`, Bibliothek
+`num2words`, LGPL): „24.099.694,29 €“ → „rund vierundzwanzig Komma eins Millionen Euro“, „17.11.2026“ → „siebzehnter November
+zweitausendsechsundzwanzig“, „14:10 Uhr“ → „vierzehn Uhr zehn“, „MS-STUTTGART“ → „M S Stuttgart“. Beträge ab 10.000 € und
+Mengen ab 100.000 werden gerundet gesprochen. Gilt für alles, was der Mac spricht (Vorlesen in KAI, Chat-Reiter, Werbefilm).
+
 ## Chat in der App (ab 0.1.9)
 
 Reiter „Chat“: Fragen direkt an das Modell auf diesem Mac — ohne KAI und ohne Netz, die Antwort erscheint beim Schreiben.
