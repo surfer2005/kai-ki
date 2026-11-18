@@ -22,9 +22,18 @@ def geraete_info() -> dict:
     return info
 
 
+def adresse_ordnen(adresse: str) -> str:
+    """Eingetippte KAI-Adresse vereinheitlichen: „kai-bsb.de“ → „https://kai-bsb.de“ (Peter 2026-11-18: ohne https:// kam
+    nur „KAI nicht erreichbar: MissingSchema“), Leerzeichen und Schrägstrich am Ende weg."""
+    a = (adresse or "").strip().rstrip("/")
+    if a and "://" not in a:
+        a = "https://" + a.lstrip("/")
+    return a
+
+
 class Kai:
     def __init__(self, adresse: str, token: str | None = None):
-        self.adresse = adresse.rstrip("/")
+        self.adresse = adresse_ordnen(adresse)
         self.token = token
         self.s = requests.Session()
         self.s.headers["User-Agent"] = f"KAI-KI/{__version__}"
@@ -34,7 +43,8 @@ class Kai:
         try:
             r = self.s.post(f"{self.adresse}/api/ki-geraet/{pfad}", json=daten, headers=kopf, timeout=timeout)
         except requests.RequestException as e:
-            raise KaiFehler(f"KAI nicht erreichbar: {e.__class__.__name__}") from e
+            raise KaiFehler(f"KAI nicht erreichbar unter {self.adresse} ({e.__class__.__name__}) — Adresse prüfen, z. B. https://kai-bsb.de "
+                            "oder https://kai-bsb.de/test") from e
         if r.status_code == 401:
             raise KaiFehler("Das Gerät ist in KAI nicht (mehr) gekoppelt — bitte neu koppeln.")
         if r.status_code >= 400:

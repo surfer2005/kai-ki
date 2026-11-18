@@ -14,7 +14,7 @@ from .arbeiter import Arbeiter
 from .chatfenster import ChatFenster
 from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, speichern, verbindungen
 from .engine import Engine
-from .kai import Kai, KaiFehler
+from .kai import Kai, KaiFehler, adresse_ordnen
 
 STATUS_TEXT = {"aus": "nicht gestartet", "startet": "Modell wird geladen …", "bereit": "bereit – wartet auf Aufträge",
                "arbeitet": "liest gerade eine Seite …", "spricht": "spricht gerade einen Text …", "chattet": "beantwortet eine Frage aus dem KI-Chat …", "hoert": "erkennt gesprochene Sprache …", "getrennt": "KAI nicht erreichbar", "fehler": "Fehler"}
@@ -150,7 +150,7 @@ class Fenster(QMainWindow):
                                else "Weitere Verbindung (z. B. Produktion neben Test): Adresse und neuen Code aus dieser KAI eintragen.")
 
     def koppeln(self):
-        adresse, code = self.adresse.text().strip().rstrip("/"), self.code.text().strip()
+        adresse, code = adresse_ordnen(self.adresse.text()), self.code.text().strip().upper()
         if not adresse or not code:
             QMessageBox.warning(self, "KAI KI", "Bitte KAI-Adresse und Code eintragen."); return
         try:

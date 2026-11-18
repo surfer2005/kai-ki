@@ -29,6 +29,10 @@ eintragen, „Koppeln“ (oder Enter im Code-Feld). Die gekoppelten stehen oben 
 geteilt. In der Liste „Erledigte Aufträge“ steht, aus welcher KAI ein Auftrag kam. Gleiche Adresse noch einmal koppeln = Gerät neu
 gekoppelt; „Verbindung entfernen“ löst eine Verbindung.
 
+## Adresse ohne https:// (ab 0.1.16)
+
+„kai-bsb.de“ reicht: die App ergänzt `https://` selbst (vorher Fehler „MissingSchema“), Schrägstrich am Ende fällt weg.
+
 ## Fenster (ab 0.1.15)
 
 Koppeln als eigener Block mit breiten Feldern; ist das Fenster zu niedrig, scrollt die Geräte-Seite, statt die Felder zu

@@ -209,3 +209,13 @@ def test_mehrere_verbindungen():
     assert verbindungen(alt) == [{"kai_url": "https://kai-bsb.de/test", "token": "t1", "name": "MacBook Peter"}]
     assert verbindungen({"verbindungen": [{"kai_url": "https://kai-bsb.de", "token": "t2"}, {"kai_url": "x"}]}) == [{"kai_url": "https://kai-bsb.de", "token": "t2"}]
     assert (bezeichnung("https://kai-bsb.de/test/"), bezeichnung("https://kai-bsb.de"), bezeichnung("http://10.0.8.18:8083")) == ("Test", "Produktion", "10.0.8.18:8083")
+
+
+def test_adresse_ordnen():
+    """Ohne https:// kam nur „MissingSchema“ (Peter 2026-11-18)."""
+    from kai_ki.kai import adresse_ordnen
+    assert adresse_ordnen("kai-bsb.de") == "https://kai-bsb.de"
+    assert adresse_ordnen(" kai-bsb.de/test/ ") == "https://kai-bsb.de/test"
+    assert adresse_ordnen("https://kai-bsb.de/") == "https://kai-bsb.de"
+    assert adresse_ordnen("http://localhost:8281") == "http://localhost:8281"
+    assert adresse_ordnen("") == ""
