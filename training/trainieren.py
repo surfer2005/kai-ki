@@ -10,7 +10,8 @@ Ablauf (jeder Schritt meldet sich, bricht mit klarer Meldung ab):
   5. Umwandeln ins GGUF-Format (llama.cpp) und auf 4 Bit verkleinern (Q4_K_M, wie das Grundmodell in der App)
   6. Ablegen als modelle/kai-eigen.gguf (das vorige bleibt als kai-eigen-vorher.gguf) + kai-eigen.json
 
-Aufruf über trainieren.sh (nimmt die Umgebung aus einrichten.sh). Nur Python-Standardbibliothek hier — die schweren Teile
+Aufruf durch die App „KAI KI“ (Reiter „Training“, kai_ki/training.py) mit der Python-Umgebung, die die App beim Einrichten
+anlegt. Nur Python-Standardbibliothek hier — die schweren Teile
 laufen als eigene Programme (mlx-lm, llama.cpp), damit ein Speicherfehler dort sauber gemeldet wird.
 """
 import argparse
@@ -153,7 +154,7 @@ def main():
     gguf_py = TRAINING / "venv-gguf" / "bin" / "python"
     umwandler = TRAINING / "llama.cpp" / "convert_hf_to_gguf.py"
     if not gguf_py.exists() or not umwandler.exists():
-        abbruch("Einrichtung fehlt — erst ./einrichten.sh ausführen.")
+        abbruch("Einrichtung fehlt — in der App im Reiter „Training“ zuerst „Einrichten“.")
     quant = llama_werkzeug("llama-quantize")
     if not quant:
         abbruch("llama-quantize nicht gefunden — die App einmal mit dem Grundmodell starten (sie lädt llama.cpp), dann erneut.")
@@ -237,11 +238,10 @@ def main():
     shutil.move(str(ergebnis), ziel)
     (MODELLE / "kai-eigen.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), "utf-8")
     print(f"""
-✔ Fertig. Nächste Schritte:
-  1. App „KAI KI“ neu öffnen → Modell „KAI angepasst (eigenes Training, Stand {info['datum']})“ wählen → Starten.
+✔ Fertig. Das angepasste Modell (Stand {info['datum']}) liegt bereit.
+  1. In der App im Reiter „Training“ auf „Angepasstes Modell verwenden“ tippen.
   2. In KAI: Administration → KI → Systemcheck → „Mit Modell prüfen“ und mit dem letzten Lauf des Grundmodells vergleichen.
-  3. Schlechter als vorher? In der App wieder „Qwen3.5 9B“ wählen. Das vorige eigene Modell liegt als kai-eigen-vorher.gguf daneben.
-  Die Trainingsdatei enthält Fragen aus dem Haus — nach dem Training löschen: {Path(a.datei).expanduser()}
+  3. Schlechter als vorher? In der App „Zurück zum Grundmodell“. Das vorige eigene Modell liegt als kai-eigen-vorher.gguf daneben.
 """)
 
 

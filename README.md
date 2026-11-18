@@ -33,12 +33,11 @@ Grundmodell“). Die geholten Trainingsdaten werden nach erfolgreichem Training 
 
 ## Eigenes Modell „KAI angepasst“ (ab 0.1.17)
 
-Mit dem Werkzeug im Ordner `training/` (bei jeder Version als `KAI-KI-Training-….zip` unter Releases) lässt sich das
-Grundmodell auf die Beispiele aus KAI nachtrainieren (Administration → KI → Training). Das Ergebnis legt
-`trainieren.sh` als `modelle/kai-eigen.gguf` ab; ab dann steht in der Modell-Auswahl „KAI angepasst (eigenes Training,
-Stand …)“. Die App startet es mit `-m` statt Download und nimmt den Bildteil (mmproj) vom Grundmodell Qwen3.5 9B — der
-muss also einmal geladen worden sein, sonst liest das eigene Modell nur Text. Fehlt die Datei später, wählt die App
-wieder das Grundmodell. Anleitung: `training/README.md`.
+Das Training im Reiter „Training“ legt das Ergebnis als `modelle/kai-eigen.gguf` ab; ab dann steht in der Modell-Auswahl
+„KAI angepasst (eigenes Training, Stand …)“. Die App startet es mit `-m` statt Download und nimmt den Bildteil (mmproj) vom
+Grundmodell Qwen3.5 9B — der muss also einmal geladen worden sein, sonst liest das eigene Modell nur Text. Fehlt die Datei
+später, wählt die App wieder das Grundmodell. Ab 0.1.19 gibt es keine eigene Trainings-Datei mehr unter Releases — die Skripte
+stecken in der App (`training/README.md`).
 
 ## Mehrere KAI zugleich (ab 0.1.14)
 

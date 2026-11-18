@@ -1,55 +1,45 @@
 # KAI KI nachtrainieren („Weg 3“)
 
-Macht aus den gesammelten Beispielen in KAI ein eigenes Modell **„KAI angepasst“**, das die App „KAI KI“ wie jedes
-andere Modell startet. Die KI lernt dabei, **welche Abfrage zu welcher Frage gehört und wie eine gute Antwort aussieht** —
-nicht die Zahlen selbst, die fragt sie weiter bei KAI ab.
+Das Training läuft in der App „KAI KI“ im Reiter **„Training“** — ohne Terminal. Die beiden Skripte in diesem Ordner
+werden mit der App ausgeliefert (PyInstaller `--add-data training:training`, beim Bauen geprüft) und von ihr gestartet:
 
-## Was man braucht
+- `trainieren.py` — der Ablauf in sechs Schritten (prüfen und aufteilen → Fehlerwert vorher → Training → Fehlerwert nachher →
+  zusammenführen → ins App-Format umwandeln und ablegen). Es schreibt Zeilen wie `▶ 3/6 …`, `Fehlerwert …`, `✔`/`✖`, aus denen die
+  App ihren Fortschrittsbalken bildet (`kai_ki/training.py`, `zeile_auswerten()`).
+- `zusammenfuehren.py` — rechnet das Gelernte (LoRA) auf die **Original**-Gewichte des Grundmodells.
 
-- Mac mit Apple-Chip, **ab 32 GB Arbeitsspeicher** (dann volle Genauigkeit). Mit 16–24 GB geht es mit dem
-  4-Bit-Grundmodell — langsamer und etwas ungenauer, das Skript wählt das selbst.
-- rund 60 GB freier Platz (Grundmodell 18 GB, Zwischenstände, Ergebnis 6 GB)
-- Python ab 3.10 (z. B. `brew install python@3.12`)
-- die App „KAI KI“, einmal mit dem Grundmodell „Qwen3.5 9B“ gestartet (sie lädt das Rechenprogramm llama.cpp und den
-  Bildteil, den das eigene Modell mitbenutzt)
-
-## Ablauf
+## So geht es in der App
 
 1. **Beispiele in KAI sammeln:** Administration → KI → Protokoll — Antworten klären und „für Training freigeben“
    (schlechte nur mit korrigierter Antwort). Dazu kommen automatisch Abfrage-Beispiele aus dem Systemcheck.
-2. **Trainingsdatei holen:** Administration → KI → Training → „Beispiele herunterladen“ (`kai-ki-training-….jsonl`).
-3. **Einmal einrichten** (lädt mlx-lm und den Umwandler aus llama.cpp):
-   ```
-   ./einrichten.sh
-   ```
-4. **Trainieren** (20–90 Minuten, Netzteil anschließen; der Mac schläft solange nicht ein):
-   ```
-   ./trainieren.sh ~/Downloads/kai-ki-training-2026-11-18.jsonl
-   ```
-   Schritte: prüfen und aufteilen (10 % zur Kontrolle) → Fehlerwert vorher → Training → Fehlerwert nachher →
-   zusammenführen (Gelerntes auf die Original-Gewichte) → ins App-Format (GGUF, 4 Bit) → ablegen als `modelle/kai-eigen.gguf`.
-5. **In der App** „KAI angepasst (eigenes Training, Stand …)“ wählen und starten.
-6. **In KAI vergleichen:** Administration → KI → Systemcheck → „Mit Modell prüfen“ — mit dem letzten Lauf des
-   Grundmodells vergleichen. Schlechter? In der App wieder „Qwen3.5 9B“ wählen; das vorige eigene Modell liegt als
+2. In der App, Reiter „Training“, einmal **Einrichten**. Die App legt wie beim Sprecher über uv eigene Python-Umgebungen an
+   (mlx-lm für das Training, der Umwandler aus llama.cpp in der Version des Rechenprogramms). Das dauert einige Minuten, etwa 2 GB.
+3. **Aus KAI holen:** Die App holt die Trainingsdatei über ihre Kopplung (`POST /api/ki-geraet/training`, in KAI im Audit).
+   Alternativ „Stattdessen eine Datei wählen …“ mit der Datei aus Administration → KI → Training.
+4. **Training starten** (20–90 Minuten, Netzteil anschließen). Die KI pausiert solange, der Mac schläft nicht ein.
+   Beim ersten Mal lädt das Training das Grundmodell (ca. 19 GB).
+5. **Angepasstes Modell verwenden**, dann in KAI unter Administration → KI → Systemcheck „Mit Modell prüfen“ und mit dem
+   letzten Lauf des Grundmodells vergleichen. Schlechter? „Zurück zum Grundmodell“. Das vorige eigene Modell liegt als
    `kai-eigen-vorher.gguf` daneben.
 
-Weitere Schalter: `./trainieren.sh --help` (z. B. `--laenge 4096` bei Speicherfehler, `--iters`, `--basis`).
+Voraussetzungen: Mac mit Apple-Chip, am besten ab 32 GB Arbeitsspeicher (mit 16–24 GB nimmt das Training das 4-Bit-Grundmodell,
+langsamer und etwas ungenauer), rund 60 GB frei. Die App einmal mit dem Grundmodell „Qwen3.5 9B“ gestartet haben — sie lädt dabei
+das Rechenprogramm (llama.cpp, für `llama-quantize`) und den Bildteil, den das eigene Modell mitbenutzt.
 
 ## Datenschutz
 
-Die Trainingsdatei enthält Fragen aus dem Haus samt den Daten, die KAI dazu geliefert hat. Sie bleibt auf diesem Mac:
-nichts davon wird hochgeladen (geladen werden nur Programme und das öffentliche Grundmodell). Nach dem Training die
-Datei löschen. Die Zwischenstände liegen unter `~/Library/Application Support/KAI-KI/training/lauf-…` und können
-ebenfalls gelöscht werden.
+Die Trainingsdaten enthalten Fragen aus dem Haus samt den Daten, die KAI dazu geliefert hat. Sie bleiben auf diesem Mac;
+hochgeladen wird nichts (geladen werden nur Programme und das öffentliche Grundmodell). Nach einem erfolgreichen Training löscht die
+App die geholten Daten, `trainieren.py` löscht die Kopien im Arbeitsordner (`~/Library/Application Support/KAI-KI/training/lauf-…`).
 
 ## Technik
 
 - Training: [mlx-lm](https://github.com/ml-explore/mlx-lm) 0.32.2, LoRA auf 16 Schichten, nur die Antworten werden
   gelernt (`--mask-prompt`), Grundmodell `Qwen/Qwen3.5-9B` bzw. `mlx-community/Qwen3.5-9B-4bit`
-- Zusammenführen: `zusammenfuehren.py` rechnet das Gelernte (LoRA) auf die **Original**-Gewichte (W + scale·Bᵀ·Aᵀ) —
-  bewusst nicht `mlx_lm fuse`: das speichert bei Qwen3.5 die Normen umgerechnet (1 + w), und nach der Umwandlung antwortete
-  das Modell nur Unsinn. Beim 4-Bit-Grundmodell wird dafür einmal das Original (ca. 19 GB) geladen.
-- Umwandlung: `convert_hf_to_gguf.py` und `llama-quantize` aus llama.cpp in der Version der App
+- Zusammenführen: `zusammenfuehren.py` rechnet W + scale·Bᵀ·Aᵀ auf die Original-Gewichte — bewusst nicht `mlx_lm fuse`:
+  das speichert bei Qwen3.5 die Normen umgerechnet (1 + w), und nach der Umwandlung antwortete das Modell nur Unsinn.
+  Beim 4-Bit-Grundmodell wird dafür einmal das Original (ca. 19 GB) geladen.
+- Umwandlung: `convert_hf_to_gguf.py` und `llama-quantize` (Q4_K_M) aus llama.cpp in der Version der App
 - Die App startet das eigene Modell mit `-m kai-eigen.gguf --mmproj <Bildteil des Grundmodells>`
 - Probelauf der ganzen Kette am 2026-11-18 unter Linux mit dem kleinen `Qwen/Qwen3.5-0.8B` (gleicher Aufbau): Fehlerwert
-  3,05 → 1,64 nach 4 Schritten, Ergebnis lädt mit dem Bildteil des Grundmodells und liest ein Bildschirmfoto richtig
+  3,05 → 0,30 nach 20 Schritten, Ergebnis lädt mit dem Bildteil des Grundmodells und liest ein Bildschirmfoto richtig

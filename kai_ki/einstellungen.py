@@ -22,7 +22,7 @@ MODELLE = {
                     "bytes": 3_000_000_000},   # Q4_K_M 1,93 GB + mmproj 0,84–1,34 GB
 }
 # Eigenes, auf KAI nachtrainiertes Modell („Weg 3“, Ordner training/): liegt als Datei im Modell-Ordner, kein Download.
-# Erscheint in der Auswahl erst, wenn trainieren.sh die Datei abgelegt hat. Den Bildteil (mmproj) nimmt es vom Grundmodell.
+# Erscheint in der Auswahl erst, wenn das Training (Reiter „Training“) die Datei abgelegt hat. Den Bildteil (mmproj) nimmt es vom Grundmodell.
 MODELLE["kai-eigen"] = {"name": "KAI angepasst (eigenes Training)", "datei": "kai-eigen.gguf", "basis": "qwen35-9b",
                         "groesse": "liegt auf dem Mac", "bytes": 0, "args": ["--reasoning", "off"], "denken_aus": True}
 VORGABE_MODELL = "qwen35-9b"   # Vergleich 17.11.: so genau wie Q8, rund 30 % schneller
@@ -36,7 +36,7 @@ def eigenes_modell(key: str) -> Path | None:
 
 
 def eigenes_info() -> dict:
-    """Angaben von trainieren.sh zum eigenen Modell (Datum, Beispiele, Grundmodell) — leer, wenn keine."""
+    """Angaben des Trainings zum eigenen Modell (Datum, Beispiele, Grundmodell) — leer, wenn keine."""
     try:
         return json.loads((EIGEN_ORDNER / "kai-eigen.json").read_text("utf-8"))
     except (OSError, ValueError):

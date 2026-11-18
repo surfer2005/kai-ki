@@ -21,7 +21,7 @@ import requests
 from .einstellungen import ORDNER
 
 TRAINING = ORDNER / "training"
-MLX_LM = "mlx-lm==0.32.2"                  # gleiche Fassung wie training/einrichten.sh
+MLX_LM = "mlx-lm==0.32.2"                  # geprüfte Fassung (Probelauf 2026-11-18)
 STAND = "1"                                  # erhöhen, wenn eine bestehende Einrichtung ergänzt werden muss
 MARKE = TRAINING / f"eingerichtet-{STAND}"
 LOG = TRAINING / "einrichten.log"

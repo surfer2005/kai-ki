@@ -29,18 +29,13 @@ jobs:
           codesign --force --deep --sign - "dist/KAI KI.app"
           VERSION=$(python -c "import kai_ki; print(kai_ki.__version__)")
           ditto -c -k --keepParent "dist/KAI KI.app" "KAI-KI-macOS-${VERSION}.zip"
-          # Werkzeug zum Nachtrainieren (Weg 3) als eigene Datei
-          rm -rf training/__pycache__; chmod +x training/*.sh
-          ditto -c -k --keepParent training "KAI-KI-Training-${VERSION}.zip"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            KAI-KI-macOS-*.zip
-            KAI-KI-Training-*.zip
+          files: KAI-KI-macOS-*.zip
           body: |
             KAI KI ${{ env.VERSION }} für Mac (Apple Silicon M1–M4).
             Entpacken, „KAI KI“ in den Ordner Programme ziehen, beim ersten Öffnen Rechtsklick → Öffnen (die App ist nicht bei Apple signiert).
-            Nachtrainieren: in der App im Reiter „Training“ (ab 0.1.18). KAI-KI-Training = dieselben Skripte für das Terminal (Anleitung in README.md).
+            Nachtrainieren: in der App im Reiter „Training“ (Einrichten, Aus KAI holen, Training starten) — ohne Terminal.

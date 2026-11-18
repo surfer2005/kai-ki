@@ -107,7 +107,7 @@ def modell_quelle(key: str, melden=print) -> list:
     if datei is None:
         return ["-hf", MODELLE[key]["hf"]]
     if not datei.is_file():
-        raise EngineFehler(f"Eigenes Modell fehlt: {datei} — erst mit training/trainieren.sh erzeugen")
+        raise EngineFehler(f"Eigenes Modell fehlt: {datei} — erst im Reiter „Training“ erzeugen")
     quelle = ["-m", str(datei)]
     bild = bildteil_suchen(MODELLE[key].get("basis", ""))
     if bild:
