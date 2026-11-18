@@ -225,7 +225,7 @@ def main():
             "datei": Path(a.datei).name, "lauf": str(lauf)}
     (lauf / "kai-eigen.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), "utf-8")
     if a.ohne_ablage:
-        melden(f"Fertig — Ergebnis liegt in {ergebnis} (nicht abgelegt).")
+        print(f"\n✔ Fertig — Ergebnis liegt in {ergebnis} (nicht in der App abgelegt).", flush=True)
         return
     melden("6/6 In der App ablegen")
     MODELLE.mkdir(parents=True, exist_ok=True)
