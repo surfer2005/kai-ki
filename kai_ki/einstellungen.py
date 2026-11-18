@@ -24,6 +24,23 @@ MODELLE = {
 VORGABE_MODELL = "qwen35-9b"   # Vergleich 17.11.: so genau wie Q8, rund 30 % schneller
 
 
+def verbindungen(cfg: dict) -> list:
+    """Verbindungen zu KAI (z. B. Test und Produktion) — ältere Einstellungen mit nur einer werden übernommen."""
+    v = cfg.get("verbindungen")
+    if v is None and cfg.get("token") and cfg.get("kai_url"):
+        v = [{"kai_url": cfg["kai_url"], "token": cfg["token"], "name": cfg.get("name", "")}]
+    return [x for x in (v or []) if x.get("kai_url") and x.get("token")]
+
+
+def bezeichnung(url: str) -> str:
+    """Kurzname einer Verbindung: „Test“ für …/test, sonst „Produktion“ bzw. die Adresse."""
+    from urllib.parse import urlparse
+    u = urlparse(url or "")
+    if u.path.rstrip("/").lower().endswith("/test"):
+        return "Test"
+    return "Produktion" if u.netloc.endswith("kai-bsb.de") else (u.netloc or url)
+
+
 def laden() -> dict:
     try:
         return json.loads(DATEI.read_text("utf-8"))

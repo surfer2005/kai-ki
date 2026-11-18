@@ -201,3 +201,11 @@ def test_sprechtext_grenzfaelle():
     assert s("vom 11.10.2026, Abfahrt 07:25 – 13 Fahrten") == "vom elften Oktober zweitausendsechsundzwanzig, Abfahrt sieben Uhr fünfundzwanzig, dreizehn Fahrten"
     assert s("Version 0.1.13") == "Version 0.1.13"
     assert s("Beleg 074051") == "Beleg null sieben vier null fünf eins"
+
+
+def test_mehrere_verbindungen():
+    from kai_ki.einstellungen import bezeichnung, verbindungen
+    alt = {"kai_url": "https://kai-bsb.de/test", "token": "t1", "name": "MacBook Peter"}
+    assert verbindungen(alt) == [{"kai_url": "https://kai-bsb.de/test", "token": "t1", "name": "MacBook Peter"}]
+    assert verbindungen({"verbindungen": [{"kai_url": "https://kai-bsb.de", "token": "t2"}, {"kai_url": "x"}]}) == [{"kai_url": "https://kai-bsb.de", "token": "t2"}]
+    assert (bezeichnung("https://kai-bsb.de/test/"), bezeichnung("https://kai-bsb.de"), bezeichnung("http://10.0.8.18:8083")) == ("Test", "Produktion", "10.0.8.18:8083")

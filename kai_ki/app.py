@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QGroupBox, 
 from . import __version__
 from .arbeiter import Arbeiter
 from .chatfenster import ChatFenster
-from .einstellungen import MODELLE, VORGABE_MODELL, laden, speichern
+from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, speichern, verbindungen
 from .engine import Engine
 from .kai import Kai, KaiFehler
 
@@ -24,7 +24,7 @@ class Bote(QObject):
     """Nachrichten aus dem Arbeits-Thread in die Oberfläche (Qt verlangt das über Signale)."""
     meldung = Signal(str)
     erledigt = Signal(dict)
-    status = Signal(str)
+    status = Signal(str, str)        # Verbindung („Test“/„Produktion“), Status
 
 
 def punkt(farbe: str) -> QIcon:
@@ -38,7 +38,11 @@ class Fenster(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"KAI KI {__version__}")
         self.cfg = laden()
-        self.arbeiter: Arbeiter | None = None
+        # mehrere Verbindungen (Peter 2026-11-18: „Test und Produktion anbinden“) — je Verbindung ein Ablauf,
+        # Modell, Sprecher und Hörer gibt es nur einmal auf dem Mac
+        self.cfg["verbindungen"] = verbindungen(self.cfg)
+        self.ablaeufe: list[Arbeiter] = []
+        self.stati: dict = {}
         self.engine: Engine | None = None
         self.bote = Bote()
         self.bote.meldung.connect(self.meldung)
@@ -46,17 +50,23 @@ class Fenster(QMainWindow):
         self.bote.status.connect(self.status_setzen)
 
         w = QWidget(); lay = QVBoxLayout(w)
-        kopf = QLabel("<b>Eigene KI für KAI</b><br><span style='color:#666'>Liest Belegseiten mit einem Modell auf diesem Mac. "
-                      "Die App holt die Aufträge bei KAI ab; die Bilder verlassen den Mac nicht.</span>")
+        kopf = QLabel("<b>Eigene KI für KAI</b><br><span style='color:#666'>Rechnet für KAI auf diesem Mac — Belege lesen, KI-Chat, Sprechen, "
+                      "Hören — auch für mehrere KAI zugleich (z. B. Test und Produktion). Die App holt die Aufträge ab; nichts verlässt den Mac.</span>")
         kopf.setWordWrap(True); lay.addWidget(kopf)
 
-        g1 = QGroupBox("Verbindung zu KAI"); f1 = QFormLayout(g1)
-        self.adresse = QLineEdit(self.cfg.get("kai_url", "")); self.adresse.setPlaceholderText("https://kai-bsb.de/test")
+        g1 = QGroupBox("Verbindungen zu KAI"); v1 = QVBoxLayout(g1)
+        self.verb_liste = QListWidget(); self.verb_liste.setMaximumHeight(72); v1.addWidget(self.verb_liste)
+        z1 = QHBoxLayout(); self.entfernen_knopf = QPushButton("Verbindung entfernen"); self.entfernen_knopf.clicked.connect(self.verbindung_entfernen)
+        z1.addStretch(); z1.addWidget(self.entfernen_knopf); v1.addLayout(z1)
+        f1 = QFormLayout()
+        self.adresse = QLineEdit(); self.adresse.setPlaceholderText("https://kai-bsb.de/test  oder  https://kai-bsb.de")
         self.code = QLineEdit(); self.code.setPlaceholderText("XXXX-XXXX (in KAI: Einstellungen → Schnittstellen → KI → Gerät koppeln)")
         self.koppeln_knopf = QPushButton("Koppeln"); self.koppeln_knopf.clicked.connect(self.koppeln)
-        self.gekoppelt = QLabel(f"gekoppelt als „{self.cfg['name']}“" if self.cfg.get("token") else "noch nicht gekoppelt")
-        f1.addRow("KAI-Adresse", self.adresse); f1.addRow("Code", self.code); f1.addRow("", self.koppeln_knopf); f1.addRow("Stand", self.gekoppelt)
+        f1.addRow("KAI-Adresse", self.adresse); f1.addRow("Code", self.code); f1.addRow("", self.koppeln_knopf)
+        v1.addLayout(f1)
+        self.gekoppelt = QLabel(""); self.gekoppelt.setStyleSheet("color:#666"); v1.addWidget(self.gekoppelt)
         lay.addWidget(g1)
+        self.verbindungen_zeigen()
 
         g2 = QGroupBox("Modell"); f2 = QFormLayout(g2)
         self.modell = QComboBox()
@@ -84,61 +94,94 @@ class Fenster(QMainWindow):
         self.tray = QSystemTrayIcon(punkt(STATUS_FARBE["aus"]), self)
         menu = QMenu(); a1 = QAction("Fenster öffnen", self); a1.triggered.connect(self.zeigen); a2 = QAction("Beenden", self); a2.triggered.connect(self.beenden)
         menu.addAction(a1); menu.addAction(a2); self.tray.setContextMenu(menu); self.tray.setToolTip("KAI KI"); self.tray.show()
-        if self.cfg.get("token") and self.cfg.get("kai_url"):
+        if self.cfg["verbindungen"]:
             self.starten()
 
     def hoerer_holen(self):
-        """Whisper für das Mikrofon im Chat-Reiter: derselbe Hörer wie für KAI-Aufträge (sonst liefe das Modell doppelt)."""
-        if self.arbeiter:
-            return self.arbeiter.hoerer
+        """Whisper: EIN Hörer für alle Verbindungen und den Chat-Reiter (sonst liefe das Modell doppelt)."""
         if not getattr(self, "_hoerer", None):
             from .hoerer import Hoerer
             self._hoerer = Hoerer()
         return self._hoerer
 
     def sprecher_holen(self):
-        """Chatterbox für „Vorlesen“ im Chat-Reiter: derselbe Sprecher wie für KAI-Aufträge."""
-        if self.arbeiter:
-            return self.arbeiter.sprecher
+        """Chatterbox: EIN Sprecher für alle Verbindungen und den Chat-Reiter."""
         if not getattr(self, "_sprecher", None):
             from .sprecher import Sprecher
             self._sprecher = Sprecher()
         return self._sprecher
 
     # ---------- Aktionen ----------
+    def verbindungen_zeigen(self):
+        zeilen = [f"{bezeichnung(v['kai_url'])}  –  {v['kai_url']}  –  gekoppelt als „{v.get('name', '')}“  –  "
+                  f"{STATUS_TEXT.get(self.stati.get(bezeichnung(v['kai_url'])), self.stati.get(bezeichnung(v['kai_url'])) or 'nicht gestartet')}" for v in self.cfg["verbindungen"]]
+        if self.verb_liste.count() == len(zeilen):        # nur Texte erneuern — die Auswahl (zum Entfernen) bleibt
+            for i, z in enumerate(zeilen):
+                self.verb_liste.item(i).setText(z)
+        else:
+            self.verb_liste.clear(); self.verb_liste.addItems(zeilen)
+        self.gekoppelt.setText("Noch keine Verbindung — KAI-Adresse und Code eintragen, dann „Koppeln“." if not self.cfg["verbindungen"]
+                               else "Weitere Verbindung (z. B. Produktion neben Test): Adresse und neuen Code aus dieser KAI eintragen.")
+
     def koppeln(self):
-        adresse, code = self.adresse.text().strip(), self.code.text().strip()
+        adresse, code = self.adresse.text().strip().rstrip("/"), self.code.text().strip()
         if not adresse or not code:
             QMessageBox.warning(self, "KAI KI", "Bitte KAI-Adresse und Code eintragen."); return
         try:
             r = Kai(adresse).koppeln(code)
         except KaiFehler as e:
             QMessageBox.warning(self, "KAI KI", str(e)); return
-        self.cfg.update({"kai_url": adresse, "token": r["token"], "name": r["name"]}); speichern(self.cfg)
-        self.code.clear(); self.gekoppelt.setText(f"gekoppelt als „{r['name']}“")
+        # gleiche Adresse = Gerät neu gekoppelt (ersetzt), sonst eine weitere Verbindung
+        self.cfg["verbindungen"] = [v for v in self.cfg["verbindungen"] if v["kai_url"].rstrip("/") != adresse] + [{"kai_url": adresse, "token": r["token"], "name": r["name"]}]
+        for k in ("kai_url", "token", "name"):     # alte Einzel-Felder nicht mehr pflegen
+            self.cfg.pop(k, None)
+        speichern(self.cfg)
+        self.code.clear(); self.adresse.clear(); self.verbindungen_zeigen()
         self.anhalten(); self.starten()
+
+    def verbindung_entfernen(self):
+        i = self.verb_liste.currentRow()
+        if i < 0 or i >= len(self.cfg["verbindungen"]):
+            QMessageBox.information(self, "KAI KI", "Bitte erst eine Verbindung in der Liste auswählen."); return
+        v = self.cfg["verbindungen"][i]
+        if QMessageBox.question(self, "KAI KI", f"Verbindung „{bezeichnung(v['kai_url'])}“ ({v['kai_url']}) entfernen? Die App holt dort dann keine Aufträge mehr.") != QMessageBox.Yes:
+            return
+        self.cfg["verbindungen"].pop(i); self.cfg.pop("kai_url", None); self.cfg.pop("token", None); speichern(self.cfg)
+        self.anhalten(); self.verbindungen_zeigen()
+        if self.cfg["verbindungen"]:
+            self.starten()
 
     def modell_gewechselt(self):
         self.cfg["modell"] = self.modell.currentData(); speichern(self.cfg)
-        if self.arbeiter:
+        if self.ablaeufe:
             self.anhalten(); self.starten()
 
+    def laeuft(self) -> bool:
+        return any(a.is_alive() for a in self.ablaeufe)
+
     def starten(self):
-        if not self.cfg.get("token"):
+        if not self.cfg["verbindungen"]:
             QMessageBox.information(self, "KAI KI", "Erst mit KAI koppeln."); return
-        if self.arbeiter and self.arbeiter.is_alive():
+        if self.laeuft():
             return
         self.engine = Engine(self.cfg.get("modell", VORGABE_MODELL), melden=self.bote.meldung.emit)
-        self.arbeiter = Arbeiter(Kai(self.cfg["kai_url"], self.cfg["token"]), self.engine,
-                                 melden=self.bote.meldung.emit, erledigt=self.bote.erledigt.emit, status=self.bote.status.emit)
-        self.arbeiter.start(); self.start_knopf.setEnabled(False); self.stopp_knopf.setEnabled(True)
+        self.ablaeufe = []
+        for v in self.cfg["verbindungen"]:
+            q = bezeichnung(v["kai_url"])
+            a = Arbeiter(Kai(v["kai_url"], v["token"]), self.engine, melden=lambda t, q=q: self.bote.meldung.emit(f"{q}: {t}"),
+                         erledigt=self.bote.erledigt.emit, status=lambda st, q=q: self.bote.status.emit(q, st),
+                         sprecher=self.sprecher_holen(), hoerer=self.hoerer_holen(), quelle=q)
+            self.ablaeufe.append(a); a.start()
+        self.start_knopf.setEnabled(False); self.stopp_knopf.setEnabled(True)
 
     def anhalten(self):
-        if self.arbeiter:
-            self.arbeiter.stoppen(); self.arbeiter = None
+        for a in self.ablaeufe:
+            a.stoppen()
+        self.ablaeufe = []
         if self.engine:
             self.engine.stoppen(); self.engine = None
-        self.status_setzen("aus"); self.start_knopf.setEnabled(True); self.stopp_knopf.setEnabled(False)
+        self.stati = {}
+        self.status_setzen("", "aus"); self.start_knopf.setEnabled(True); self.stopp_knopf.setEnabled(False)
 
     def zeigen(self):
         self.show(); self.raise_(); self.activateWindow()
@@ -158,26 +201,36 @@ class Fenster(QMainWindow):
         zeit = f"{datetime.now():%H:%M:%S}"
         if e.get("art") == "sprechen":
             text = f"{e['dauer_s']:.0f} s gerechnet, {e.get('ton_s', 0):.0f} s Ton" if e["ok"] else f"Fehler – {e.get('fehler', '')}"
-            self.liste.insertItem(0, f"{zeit}  Sprechen {e['id']}: {text}")
+            self.liste.insertItem(0, f"{zeit}  {e.get('quelle', '')} · Sprechen {e['id']}: {text}")
         elif e.get("art") == "hoeren":
             text = f"{e['dauer_s']:.0f} s, {e.get('zeichen', 0)} Zeichen erkannt" if e["ok"] else f"Fehler – {e.get('fehler', '')}"
-            self.liste.insertItem(0, f"{zeit}  Mikrofon {e['id']}: {text}")
+            self.liste.insertItem(0, f"{zeit}  {e.get('quelle', '')} · Mikrofon {e['id']}: {text}")
         elif e.get("art") == "chat":
             text = (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" + (" (in KAI gestoppt)" if e.get("gestoppt") else "")) if e["ok"] else f"Fehler – {e.get('fehler', '')}"
-            self.liste.insertItem(0, f"{zeit}  Chat {e['id']}: {text}")
+            self.liste.insertItem(0, f"{zeit}  {e.get('quelle', '')} · Chat {e['id']}: {text}")
         else:
-            self.liste.insertItem(0, f"{zeit}  Auftrag {e['id']}: " + (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" if e["ok"] else f"Fehler – {e.get('fehler', '')}"))
+            self.liste.insertItem(0, f"{zeit}  {e.get('quelle', '')} · Auftrag {e['id']}: " + (f"{e['dauer_s']:.0f} s, {e.get('tokens', 0)} Tokens" if e["ok"] else f"Fehler – {e.get('fehler', '')}"))
         while self.liste.count() > 200:
             self.liste.takeItem(self.liste.count() - 1)
 
-    def status_setzen(self, s: str):
-        self.status.setText(STATUS_TEXT.get(s, s))
-        laeuft = bool(self.arbeiter and self.arbeiter.is_alive())
-        if s == "fehler" and not laeuft:  # nach einem Fehler gleich wieder „Starten“ anbieten
+    def status_setzen(self, quelle: str, s: str):
+        if quelle:
+            self.stati[quelle] = s
+        laeuft = self.laeuft()
+        if not self.stati or not laeuft:
+            text = STATUS_TEXT.get(s, s); farbe = STATUS_FARBE.get(s, "#b07a17")
+        else:
+            text = " · ".join(f"{q}: {STATUS_TEXT.get(x, x)}" for q, x in self.stati.items())
+            werte = list(self.stati.values())
+            farbe = next((STATUS_FARBE[x] for x in ("fehler", "getrennt") if x in werte), None) or \
+                next((STATUS_FARBE.get(x, "#b07a17") for x in werte if x != "bereit"), STATUS_FARBE["bereit"])
+        self.status.setText(text)
+        if not laeuft:                    # kein Ablauf mehr (Fehler beim Start): „Starten“ anbieten
             self.start_knopf.setEnabled(True); self.stopp_knopf.setEnabled(False)
-        elif laeuft:                      # läuft ein Ablauf, stehen die Knöpfe immer so
+        else:
             self.start_knopf.setEnabled(False); self.stopp_knopf.setEnabled(True)
-        self.tray.setIcon(punkt(STATUS_FARBE.get(s, "#b07a17")))   # unbekannt = Ladefortschritt (gelb); self.tray.setToolTip(f"KAI KI – {STATUS_TEXT.get(s, s)}")
+        self.tray.setIcon(punkt(farbe)); self.tray.setToolTip(f"KAI KI – {text}")
+        self.verbindungen_zeigen()
 
 
 def main():

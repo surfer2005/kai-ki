@@ -9,6 +9,7 @@ import signal
 import stat
 import subprocess
 import tarfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -161,6 +162,7 @@ def uebrig_gebliebene_beenden(melden=print) -> None:
 class Engine:
     def __init__(self, modell_key: str, melden=print):
         self.modell_key = modell_key if modell_key in MODELLE else next(iter(MODELLE))
+        self._start_sperre = threading.Lock()
         self.melden = melden
         self.proc: subprocess.Popen | None = None
         self.log = ORDNER / "llama-server.log"
@@ -178,6 +180,10 @@ class Engine:
     def starten(self, warten_s: int = 3600, fortschritt=lambda text, prozent: None, versuche: int = 6) -> None:
         """Modell starten. Bricht der Download ab (Netz), startet die App llama-server bis zu `versuche`-mal neu — llama.cpp
         setzt dabei am angefangenen Stück (*.downloadInProgress) fort, statt neu zu beginnen."""
+        with self._start_sperre:          # mehrere Verbindungen (Test + Produktion) teilen ein Modell
+            return self._starten_versuche(warten_s, fortschritt, versuche)
+
+    def _starten_versuche(self, warten_s: int, fortschritt, versuche: int) -> None:
         self.angehalten = False
         for versuch in range(1, versuche + 1):
             if self.angehalten:           # während der Pause angehalten
@@ -228,6 +234,7 @@ class Engine:
         raise EngineFehler("Modell wurde nicht rechtzeitig bereit")
 
     angehalten = False             # gewollt angehalten (Anhalten/Modellwechsel) → kein neuer Versuch
+    _start_sperre = None
 
     def stoppen(self) -> None:
         self.angehalten = True

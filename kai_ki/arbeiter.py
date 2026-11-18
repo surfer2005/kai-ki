@@ -22,16 +22,18 @@ def aufgabe_mit_texterkennung(aufgabe: str, ocr_text: str) -> str:
 class Arbeiter(threading.Thread):
     """Läuft im Hintergrund, solange die App offen ist. `melden(text)` und `erledigt(eintrag)` gehen an die Oberfläche."""
 
-    def __init__(self, kai: Kai, engine: Engine, melden=print, erledigt=lambda e: None, status=lambda s: None):
+    def __init__(self, kai: Kai, engine: Engine, melden=print, erledigt=lambda e: None, status=lambda s: None, sprecher=None, hoerer=None, quelle: str = ""):
         super().__init__(daemon=True)
         self.kai, self.engine = kai, engine
         self.halt = threading.Event()
         # Nach „Anhalten“/Modellwechsel läuft dieser Ablauf noch kurz weiter — seine Meldungen dürfen die Oberfläche des
         # neuen Ablaufs nicht mehr verändern (ein später „Fehler“ setzte sonst die Knöpfe zurück, obwohl alles lief)
         lebt = lambda f: (lambda *a, **k: None if self.halt.is_set() else f(*a, **k))  # noqa: E731
-        self.melden, self.erledigt, self.status = lebt(melden), lebt(erledigt), lebt(status)
-        self.sprecher = Sprecher()
-        self.hoerer = Hoerer()
+        self.quelle = quelle                  # „Test“ / „Produktion“ — mehrere Verbindungen teilen Modell, Sprecher und Hörer
+        self.melden, self.status = lebt(melden), lebt(status)
+        self.erledigt = lebt(lambda e: erledigt({**e, "quelle": quelle}))
+        self.sprecher = sprecher or Sprecher()
+        self.hoerer = hoerer or Hoerer()
 
     def melden_kai(self, zustand: str, fortschritt: str | None = None, prozent: int | None = None) -> None:
         """Zustand an KAI (Gerätezeile); ohne Verbindung still weiter — das Laden hängt nicht an KAI."""

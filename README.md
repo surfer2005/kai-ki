@@ -21,6 +21,14 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
 
+## Mehrere KAI zugleich (ab 0.1.14)
+
+Unter „Verbindungen zu KAI“ lassen sich mehrere KAI koppeln, z. B. Test (`https://kai-bsb.de/test`) und Produktion
+(`https://kai-bsb.de`): Adresse + neuen Code aus der jeweiligen KAI (Einstellungen → Schnittstellen → KI → Gerät koppeln) eintragen,
+„Koppeln“. Je Verbindung holt ein eigener Ablauf die Aufträge; Modell, Sprecher und Spracherkennung laufen nur einmal und werden
+geteilt. In der Liste „Erledigte Aufträge“ steht, aus welcher KAI ein Auftrag kam. Gleiche Adresse noch einmal koppeln = Gerät neu
+gekoppelt; „Verbindung entfernen“ löst eine Verbindung.
+
 ## Zahlen beim Sprechen (ab 0.1.13)
 
 Vor dem Sprechen schreibt die App Zahlen, Beträge, Datum, Uhrzeit, Einheiten und Kürzel in Worte (`sprechtext.py`, Bibliothek
