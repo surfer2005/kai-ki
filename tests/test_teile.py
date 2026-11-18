@@ -58,6 +58,9 @@ def test_modelle_vollstaendig():
     from kai_ki.einstellungen import MODELLE, VORGABE_MODELL
     assert VORGABE_MODELL in MODELLE
     for m in MODELLE.values():
+        if m.get("datei"):                       # eigenes Modell: keine Download-Angaben, aber ein Grundmodell
+            assert m["basis"] in MODELLE and m["name"]
+            continue
         assert m["hf"] and m["name"] and m["bytes"] > 1e9
     assert MODELLE["qwen35-9b"]["denken_aus"] and "--reasoning" in MODELLE["qwen35-9b"]["args"]
 
@@ -219,3 +222,26 @@ def test_adresse_ordnen():
     assert adresse_ordnen("https://kai-bsb.de/") == "https://kai-bsb.de"
     assert adresse_ordnen("http://localhost:8281") == "http://localhost:8281"
     assert adresse_ordnen("") == ""
+
+
+def test_eigenes_modell(tmp_path, monkeypatch):
+    """„KAI angepasst“ erscheint erst mit Datei, startet mit -m und nimmt den Bildteil des Grundmodells."""
+    import pytest
+    from kai_ki import einstellungen, engine
+    monkeypatch.setattr(einstellungen, "EIGEN_ORDNER", tmp_path)
+    monkeypatch.setattr(engine, "MODELL_ORDNER", tmp_path)
+    assert "kai-eigen" not in einstellungen.modelle_verfuegbar()
+    with pytest.raises(engine.EngineFehler):
+        engine.modell_quelle("kai-eigen", lambda *_: None)
+    (tmp_path / "kai-eigen.gguf").write_bytes(b"x")
+    (tmp_path / "kai-eigen.json").write_text('{"datum": "18.11.2026"}')
+    v = einstellungen.modelle_verfuegbar()
+    assert v["kai-eigen"]["name"].endswith("Stand 18.11.2026") and "qwen35-9b" in v
+    hinweise = []
+    assert engine.modell_quelle("kai-eigen", hinweise.append) == ["-m", str(tmp_path / "kai-eigen.gguf")] and hinweise
+    ablage = tmp_path / "models--unsloth--Qwen3.5-9B-GGUF" / "snapshots" / "abc"
+    ablage.mkdir(parents=True)
+    (ablage / "mmproj-BF16.gguf").write_bytes(b"x"); (ablage / "mmproj-F16.gguf").write_bytes(b"x")
+    (tmp_path / "Qwen_Qwen3-VL-8B-Instruct-GGUF_mmproj-F16.gguf").write_bytes(b"x")     # anderes Modell → nicht nehmen
+    assert engine.modell_quelle("kai-eigen", hinweise.append)[2:] == ["--mmproj", str(ablage / "mmproj-F16.gguf")]
+    assert engine.modell_quelle("qwen35-9b") == ["-hf", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M"]

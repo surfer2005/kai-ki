@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-from .einstellungen import MODELLE, ORDNER
+from .einstellungen import MODELLE, ORDNER, eigenes_modell
 
 PORT = 18737
 PID_DATEI = ORDNER / "llama-server.pid"   # Rechenprogramm dieser App — ein übrig gebliebenes wird beim Start beendet
@@ -86,6 +86,36 @@ def programm_laden(melden=print) -> Path:
     if not p:
         raise EngineFehler(f"llama-server fehlt in der geladenen Ausgabe {tag}")
     return p
+
+
+def bildteil_suchen(basis_key: str) -> Path | None:
+    """Bildteil (mmproj) des Grundmodells im Modell-Ordner — llama.cpp legt ihn beim Download dort ab (je nach Version
+    flach „unsloth_Qwen3.5-9B-GGUF_mmproj-F16.gguf“ oder als Hugging-Face-Ablage „models--unsloth--Qwen3.5-9B-GGUF/…“)."""
+    hf = (MODELLE.get(basis_key) or {}).get("hf", "")
+    stueck = hf.split(":")[0].split("/")[-1].removesuffix("-GGUF").lower()      # „qwen3.5-9b“
+    if not stueck:
+        return None
+    treffer = sorted((p for p in MODELL_ORDNER.rglob("*mmproj*.gguf")
+                      if stueck in str(p).lower() and not p.name.endswith(".downloadInProgress") and p.stat().st_size > 0),
+                     key=lambda p: ("f16" not in p.name.lower(), len(str(p))))
+    return treffer[0] if treffer else None
+
+
+def modell_quelle(key: str, melden=print) -> list:
+    """Schalter für llama-server, woher das Modell kommt: Download von Hugging Face (-hf) oder eigene Datei (-m)."""
+    datei = eigenes_modell(key)
+    if datei is None:
+        return ["-hf", MODELLE[key]["hf"]]
+    if not datei.is_file():
+        raise EngineFehler(f"Eigenes Modell fehlt: {datei} — erst mit training/trainieren.sh erzeugen")
+    quelle = ["-m", str(datei)]
+    bild = bildteil_suchen(MODELLE[key].get("basis", ""))
+    if bild:
+        quelle += ["--mmproj", str(bild)]
+    else:
+        melden("Hinweis: Bildteil des Grundmodells nicht gefunden — das eigene Modell liest nur Text (keine Lieferschein-Bilder). "
+               "Einmal das Grundmodell starten, dann ist er da.")
+    return quelle
 
 
 def teil_bytes(p: Path) -> int:
@@ -204,10 +234,14 @@ class Engine:
         server = programm_laden(self.melden)
         MODELL_ORDNER.mkdir(parents=True, exist_ok=True)
         umgebung = {**os.environ, "LLAMA_CACHE": str(MODELL_ORDNER)}
-        self.melden(f"{self.modell_name} wird geladen (beim ersten Mal {MODELLE[self.modell_key]['groesse']} Download) …")
+        quelle = modell_quelle(self.modell_key, self.melden)
+        if quelle[0] == "-hf":
+            self.melden(f"{self.modell_name} wird geladen (beim ersten Mal {MODELLE[self.modell_key]['groesse']} Download) …")
+        else:
+            self.melden(f"{self.modell_name} wird geladen …")
         log = open(self.log, "ab")
         self.proc = subprocess.Popen(
-            [str(server), "-hf", MODELLE[self.modell_key]["hf"], "--host", "127.0.0.1", "--port", str(PORT),
+            [str(server), *quelle, "--host", "127.0.0.1", "--port", str(PORT),
              "-c", "12288", "-ngl", "99", *MODELLE[self.modell_key].get("args", [])],
             stdout=log, stderr=subprocess.STDOUT, env=umgebung, cwd=str(server.parent))
         try:

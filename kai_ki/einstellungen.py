@@ -21,7 +21,40 @@ MODELLE = {
     "qwen25vl-3b": {"name": "Qwen2.5-VL 3B (schneller)", "hf": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF", "groesse": "ca. 3 GB",
                     "bytes": 3_000_000_000},   # Q4_K_M 1,93 GB + mmproj 0,84–1,34 GB
 }
+# Eigenes, auf KAI nachtrainiertes Modell („Weg 3“, Ordner training/): liegt als Datei im Modell-Ordner, kein Download.
+# Erscheint in der Auswahl erst, wenn trainieren.sh die Datei abgelegt hat. Den Bildteil (mmproj) nimmt es vom Grundmodell.
+MODELLE["kai-eigen"] = {"name": "KAI angepasst (eigenes Training)", "datei": "kai-eigen.gguf", "basis": "qwen35-9b",
+                        "groesse": "liegt auf dem Mac", "bytes": 0, "args": ["--reasoning", "off"], "denken_aus": True}
 VORGABE_MODELL = "qwen35-9b"   # Vergleich 17.11.: so genau wie Q8, rund 30 % schneller
+EIGEN_ORDNER = ORDNER / "modelle"
+
+
+def eigenes_modell(key: str) -> Path | None:
+    """Datei eines eigenen Modells (nur Einträge mit „datei“), sonst None."""
+    m = MODELLE.get(key) or {}
+    return EIGEN_ORDNER / m["datei"] if m.get("datei") else None
+
+
+def eigenes_info() -> dict:
+    """Angaben von trainieren.sh zum eigenen Modell (Datum, Beispiele, Grundmodell) — leer, wenn keine."""
+    try:
+        return json.loads((EIGEN_ORDNER / "kai-eigen.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def modelle_verfuegbar() -> dict:
+    """Modelle für die Auswahl: alle zum Herunterladen + eigene, sofern die Datei schon da ist."""
+    raus = {}
+    for k, m in MODELLE.items():
+        if m.get("datei"):
+            f = eigenes_modell(k)
+            if not (f and f.is_file()):
+                continue
+            stand = eigenes_info().get("datum", "")
+            m = {**m, "name": f"{m['name']}{', Stand ' + stand if stand else ''}"}
+        raus[k] = m
+    return raus
 
 
 def verbindungen(cfg: dict) -> list:

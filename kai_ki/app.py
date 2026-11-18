@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QGr
 from . import __version__
 from .arbeiter import Arbeiter
 from .chatfenster import ChatFenster
-from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, speichern, verbindungen
+from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, modelle_verfuegbar, speichern, verbindungen
 from .engine import Engine
 from .kai import Kai, KaiFehler, adresse_ordnen
 
@@ -89,9 +89,12 @@ class Fenster(QMainWindow):
         f2.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         g2.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.modell = QComboBox()
-        for k, m in MODELLE.items():
+        auswahl = modelle_verfuegbar()          # das eigene Modell („KAI angepasst“) erst, wenn es trainiert ist
+        if self.cfg.get("modell", VORGABE_MODELL) not in auswahl:   # z. B. eigenes Modell gelöscht → Grundmodell
+            self.cfg["modell"] = VORGABE_MODELL
+        for k, m in auswahl.items():
             self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
-        self.modell.setCurrentIndex(max(0, list(MODELLE).index(self.cfg.get("modell", VORGABE_MODELL)) if self.cfg.get("modell", VORGABE_MODELL) in MODELLE else 0))
+        self.modell.setCurrentIndex(max(0, list(auswahl).index(self.cfg["modell"]) if self.cfg["modell"] in auswahl else 0))
         self.modell.currentIndexChanged.connect(self.modell_gewechselt)
         zeile = QHBoxLayout(); self.start_knopf = QPushButton("Starten"); self.start_knopf.clicked.connect(self.starten)
         self.stopp_knopf = QPushButton("Anhalten"); self.stopp_knopf.clicked.connect(self.anhalten); self.stopp_knopf.setEnabled(False)
