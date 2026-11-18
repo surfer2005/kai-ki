@@ -23,11 +23,17 @@ anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das 
 
 ## Mehrere KAI zugleich (ab 0.1.14)
 
-Unter „Verbindungen zu KAI“ lassen sich mehrere KAI koppeln, z. B. Test (`https://kai-bsb.de/test`) und Produktion
-(`https://kai-bsb.de`): Adresse + neuen Code aus der jeweiligen KAI (Einstellungen → Schnittstellen → KI → Gerät koppeln) eintragen,
-„Koppeln“. Je Verbindung holt ein eigener Ablauf die Aufträge; Modell, Sprecher und Spracherkennung laufen nur einmal und werden
+Es lassen sich mehrere KAI koppeln, z. B. Test (`https://kai-bsb.de/test`) und Produktion (`https://kai-bsb.de`): im Block
+„Neue Verbindung koppeln“ Adresse + neuen Code aus der jeweiligen KAI (Einstellungen → Schnittstellen → KI → Gerät koppeln)
+eintragen, „Koppeln“ (oder Enter im Code-Feld). Die gekoppelten stehen oben unter „Verbindungen zu KAI“. Je Verbindung holt ein eigener Ablauf die Aufträge; Modell, Sprecher und Spracherkennung laufen nur einmal und werden
 geteilt. In der Liste „Erledigte Aufträge“ steht, aus welcher KAI ein Auftrag kam. Gleiche Adresse noch einmal koppeln = Gerät neu
 gekoppelt; „Verbindung entfernen“ löst eine Verbindung.
+
+## Fenster (ab 0.1.15)
+
+Koppeln als eigener Block mit breiten Feldern; ist das Fenster zu niedrig, scrollt die Geräte-Seite, statt die Felder zu
+stauchen (in 0.1.14 standen Adresse und Code schmal in der Mitte und waren abgeschnitten). `tests/test_fenster.py` prüft das
+beim Bauen im echten macOS-Stil.
 
 ## Zahlen beim Sprechen (ab 0.1.13)
 

@@ -5,8 +5,9 @@ from datetime import datetime
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor
-from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QMainWindow, QMenu, QMessageBox, QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSystemTrayIcon,
+                               QTabWidget, QVBoxLayout, QWidget)
 
 from . import __version__
 from .arbeiter import Arbeiter
@@ -55,20 +56,38 @@ class Fenster(QMainWindow):
         kopf.setWordWrap(True); lay.addWidget(kopf)
 
         g1 = QGroupBox("Verbindungen zu KAI"); v1 = QVBoxLayout(g1)
-        self.verb_liste = QListWidget(); self.verb_liste.setMaximumHeight(72); v1.addWidget(self.verb_liste)
+        self.verb_liste = QListWidget(); self.verb_liste.setMinimumHeight(52); self.verb_liste.setMaximumHeight(96); v1.addWidget(self.verb_liste)
         z1 = QHBoxLayout(); self.entfernen_knopf = QPushButton("Verbindung entfernen"); self.entfernen_knopf.clicked.connect(self.verbindung_entfernen)
         z1.addStretch(); z1.addWidget(self.entfernen_knopf); v1.addLayout(z1)
-        f1 = QFormLayout()
-        self.adresse = QLineEdit(); self.adresse.setPlaceholderText("https://kai-bsb.de/test  oder  https://kai-bsb.de")
-        self.code = QLineEdit(); self.code.setPlaceholderText("XXXX-XXXX (in KAI: Einstellungen → Schnittstellen → KI → Gerät koppeln)")
-        self.koppeln_knopf = QPushButton("Koppeln"); self.koppeln_knopf.clicked.connect(self.koppeln)
-        f1.addRow("KAI-Adresse", self.adresse); f1.addRow("Code", self.code); f1.addRow("", self.koppeln_knopf)
-        v1.addLayout(f1)
-        self.gekoppelt = QLabel(""); self.gekoppelt.setStyleSheet("color:#666"); v1.addWidget(self.gekoppelt)
+        g1.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         lay.addWidget(g1)
+
+        # Koppeln als eigener Block mit breiten Feldern (Peter 2026-11-18: „Anmeldefenster zu klein“ — das Formular im
+        # macOS-Stil stand schmal und mittig, im zu knappen Fenster wurden die Felder bis zur Unleserlichkeit gestaucht)
+        gk = QGroupBox("Neue Verbindung koppeln"); rk = QGridLayout(gk)
+        rk.setColumnStretch(1, 1); rk.setHorizontalSpacing(12); rk.setVerticalSpacing(8)
+        self.adresse = QLineEdit(); self.adresse.setPlaceholderText("https://kai-bsb.de  (Produktion)   oder   https://kai-bsb.de/test")
+        self.code = QLineEdit(); self.code.setPlaceholderText("XXXX-XXXX")
+        for feld in (self.adresse, self.code):
+            feld.setMinimumHeight(30); feld.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.code.returnPressed.connect(self.koppeln)
+        rk.addWidget(QLabel("KAI-Adresse"), 0, 0, Qt.AlignLeft | Qt.AlignVCenter); rk.addWidget(self.adresse, 0, 1)
+        rk.addWidget(QLabel("Code"), 1, 0, Qt.AlignLeft | Qt.AlignVCenter); rk.addWidget(self.code, 1, 1)
+        code_hilfe = QLabel("Den Code erzeugt KAI unter Einstellungen → Schnittstellen → KI → „Gerät koppeln“ (30 Minuten gültig).")
+        code_hilfe.setWordWrap(True); code_hilfe.setStyleSheet("color:#888"); rk.addWidget(code_hilfe, 2, 1)
+        self.koppeln_knopf = QPushButton("Koppeln"); self.koppeln_knopf.setMinimumWidth(120); self.koppeln_knopf.clicked.connect(self.koppeln)
+        rk.addWidget(self.koppeln_knopf, 3, 1, Qt.AlignRight)
+        self.gekoppelt = QLabel(""); self.gekoppelt.setWordWrap(True); self.gekoppelt.setStyleSheet("color:#888")
+        rk.addWidget(self.gekoppelt, 4, 0, 1, 2)
+        gk.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        lay.addWidget(gk)
         self.verbindungen_zeigen()
 
         g2 = QGroupBox("Modell"); f2 = QFormLayout(g2)
+        # links ausgerichtet, Felder füllen die Breite (der macOS-Stil stellt ein Formular sonst schmal in die Mitte)
+        f2.setFormAlignment(Qt.AlignLeft | Qt.AlignTop); f2.setLabelAlignment(Qt.AlignLeft)
+        f2.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        g2.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.modell = QComboBox()
         for k, m in MODELLE.items():
             self.modell.addItem(f"{m['name']} – {m['groesse']}", k)
@@ -82,14 +101,21 @@ class Fenster(QMainWindow):
         lay.addWidget(g2)
 
         g3 = QGroupBox("Erledigte Aufträge"); v3 = QVBoxLayout(g3)
-        self.liste = QListWidget(); v3.addWidget(self.liste)
+        self.liste = QListWidget(); self.liste.setMinimumHeight(140); v3.addWidget(self.liste)
         self.letzte_meldung = QLabel(""); self.letzte_meldung.setWordWrap(True); self.letzte_meldung.setStyleSheet("color:#666")
         v3.addWidget(self.letzte_meldung)
         lay.addWidget(g3, 1)
+        # Ist das Fenster zu niedrig, scrollt die Geräte-Seite — vorher quetschte Qt dann die Eingabefelder zusammen
+        rolle = QScrollArea(); rolle.setWidget(w); rolle.setWidgetResizable(True); rolle.setFrameShape(QFrame.NoFrame)
+        rolle.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # Reiter: „Gerät“ (wie bisher) und „Chat“ (direkt mit dem Modell auf diesem Mac, Peter 2026-11-17)
-        reiter = QTabWidget(); reiter.addTab(w, "Gerät")
+        reiter = QTabWidget(); reiter.addTab(rolle, "Gerät")
         self.chat = ChatFenster(lambda: self.engine, self.hoerer_holen, self.sprecher_holen, self.cfg, speichern); reiter.addTab(self.chat, "Chat")
-        self.setCentralWidget(reiter); self.resize(680, 720)
+        self.setCentralWidget(reiter)
+        # Startgröße: so hoch, dass alles ohne Scrollen passt, aber nie höher als der Bildschirm
+        bild = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
+        self.resize(780, min(900, (bild.height() - 40) if bild else 900))
+        self.setMinimumSize(560, 480)
 
         self.tray = QSystemTrayIcon(punkt(STATUS_FARBE["aus"]), self)
         menu = QMenu(); a1 = QAction("Fenster öffnen", self); a1.triggered.connect(self.zeigen); a2 = QAction("Beenden", self); a2.triggered.connect(self.beenden)
