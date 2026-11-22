@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QGr
 
 from . import __version__
 from .arbeiter import Arbeiter
+from .aufraeumfenster import AufraeumFenster
 from .chatfenster import ChatFenster
 from .trainingfenster import TrainingFenster
 from .einstellungen import MODELLE, VORGABE_MODELL, bezeichnung, laden, modelle_verfuegbar, speichern, verbindungen
@@ -112,6 +113,8 @@ class Fenster(QMainWindow):
         self.chat = ChatFenster(lambda: self.engine, self.hoerer_holen, self.sprecher_holen, self.cfg, speichern); reiter.addTab(self.chat, "Chat")
         # „Training“ (Weg 3, Peter 2026-11-18: Training-Zip in die App, gut für Laien): einrichten, Daten aus KAI holen, trainieren
         self.training = TrainingFenster(self.cfg, self.laeuft, self.anhalten, self.modell_verwenden); reiter.addTab(self.training, "Training")
+        # „Aufräumen“ (Peter 2026-11-22: „räum die Dokumente auf“): Ordner auf diesem Mac sortieren — erst Vorschlag, dann ausführen
+        self.aufraeumen = AufraeumFenster(lambda: self.engine); reiter.addTab(self.aufraeumen, "Aufräumen")
         self.setCentralWidget(reiter)
         # Startgröße: so hoch, dass alles ohne Scrollen passt, aber nie höher als der Bildschirm
         bild = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None

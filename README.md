@@ -2,6 +2,7 @@
 
 Liest Belegseiten (z. B. eingehende Lieferscheine) für KAI mit einem **Modell auf diesem Mac**. Die App holt die
 Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) — die Belegbilder verlassen den Mac nicht.
+Außerdem: Chat direkt mit dem Modell, Nachtrainieren und — ab 0.1.20 — **Aufräumen** von Ordnern auf dem Mac (Reiter „Aufräumen“).
 
 ## Einrichten
 1. Release laden: <https://github.com/surfer2005/kai-ki/releases/latest> → `KAI-KI-macOS-….zip` entpacken, „KAI KI“ in
@@ -20,6 +21,37 @@ Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) �
 ## Entwickeln
 Quelle liegt im KAI-Repo unter `edge/kai-ki/` und wird hierher gespiegelt. Release: Version in `kai_ki/__init__.py`
 anheben, Tag `vX.Y.Z` pushen → GitHub baut die App (macOS arm64) und legt das Release an.
+
+## Reiter „Aufräumen“ (ab 0.1.20)
+
+Ordner auf diesem Mac sortieren lassen (Peter 2026-11-22: „Könnte ich meiner KI sagen: räum die Dokumente auf?“). Alles läuft
+auf dem Mac, nichts geht ins Netz. **Zum Ausprobieren erst eine Kopie eines Ordners nehmen.**
+
+1. Im Reiter „Gerät“ das Modell starten (ohne laufendes Modell macht der Reiter nichts).
+2. **Ordner wählen …** — z. B. Dokumente, Downloads, ein Ordner in iCloud Drive oder auf einem USB-Stick. Nicht erlaubt: der ganze
+   Benutzerordner, die Festplatte, System-/Programmordner, die Library (außer iCloud Drive / Cloud-Speicher), der Datenordner der App.
+3. **Vorschlag erstellen** — die App liest je Datei Name, Typ, Größe, Datum und den Inhalt (PDF: Textebene, sonst Apples
+   Texterkennung der ersten Seiten; Bilder: Texterkennung; Word/Excel/PowerPoint/OpenOffice, Text, .doc/.rtf über macOS `textutil`)
+   und fragt die KI nach Zielordner und Dateinamen. Dabei wird **nichts verändert**. Läuft im Hintergrund, mit Fortschritt und
+   „Abbrechen“; die KI braucht je Datei einige Sekunden. Der Vorschlag wird gemerkt (auch nach einem Neustart der App).
+4. In der Liste prüfen: Zielordner und neuen Namen per Doppelklick ändern; rechts die vorgeschlagenen Ordner — dort umbenennen
+   gilt für alle Dateien darin (z. B. „Rechnung“ und „Rechnungen“ zusammenlegen). „Verschieben“ ist vorgewählt, „Umbenennen“ nicht.
+   „unklar“ = die KI war unsicher oder hat Unbrauchbares geantwortet → wird nicht verschoben, bis du selbst einen Ordner einträgst.
+   Gleicher Inhalt (Prüfsumme) → Vorschlag Ordner „Doppelt?“ — die Kopie wird nur dorthin verschoben, nie gelöscht.
+5. **Ausgewählte ausführen** — verschiebt bzw. benennt um. **Letzten Lauf rückgängig machen** stellt den Stand davor wieder her.
+
+Sicherheitsregeln (`kai_ki/aufraeumen.py`, geprüft in `tests/test_aufraeumen.py` und `tests/test_aufraeumen_fenster.py`):
+- Gearbeitet wird nur im gewählten Ordner und seinen Unterordnern. Verweise (Symlinks) werden nie verfolgt, versteckte Dateien und
+  Pakete (.app, .photoslibrary, .pages-Ordner …) ausgelassen. Was die KI vorschlägt, wird geprüft: kein „..“, kein absoluter Pfad,
+  keine versteckten Ordner, keine Paket-Endungen, höchstens 4 Ebenen; die Dateiendung bleibt immer gleich. Texte aus den Dateien
+  gelten für die KI nur als Inhalt, nie als Anweisung — und selbst eine „böse“ Antwort kann nichts außerhalb des Ordners bewirken.
+- **Nie löschen, nie überschreiben**: gibt es den Zielnamen schon, kommt „ (2)“, „ (3)“ … dazu. Umbenannt wird „exklusiv“
+  (macOS `renamex_np` mit `RENAME_EXCL`), d. h. das System selbst verweigert das Überschreiben. Ziel auf einem anderen Laufwerk →
+  ausgelassen (es wird nie kopiert).
+- **Protokoll**: jede Aktion steht VOR dem Verschieben in `~/Library/Application Support/KAI-KI/aufraeumen/lauf-<Datum>.json`
+  (alt → neu, Zeit, angelegte Ordner). Kann das Protokoll nicht geschrieben werden, wird nichts verschoben.
+- **Rückgängig** geht rückwärts durch das Protokoll; ist ein alter Platz inzwischen belegt, kommt die Datei mit „ (2)“ daneben.
+  Angelegte Ordner werden nur entfernt, wenn sie leer sind. Die früheren Läufe stehen unten im Reiter.
 
 ## Reiter „Training“ (ab 0.1.18)
 

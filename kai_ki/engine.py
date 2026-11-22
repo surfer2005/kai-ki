@@ -300,6 +300,17 @@ class Engine:
         return text, int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
 
 
+    def json_fragen(self, system: str, text: str, max_tokens: int = 300) -> str:
+        """Nur Text, Antwort als JSON erzwungen (Reiter „Aufräumen“: Zielordner + Dateiname je Datei)."""
+        anfrage = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": text}],
+                   "max_tokens": max_tokens, "temperature": 0.1, "response_format": {"type": "json_object"}}
+        if MODELLE[self.modell_key].get("denken_aus"):
+            anfrage["chat_template_kwargs"] = {"enable_thinking": False}
+        r = requests.post(f"http://127.0.0.1:{PORT}/v1/chat/completions", timeout=900, json=anfrage)
+        if r.status_code >= 400:
+            raise EngineFehler(f"Modell: {r.text[:300]}")
+        return r.json()["choices"][0]["message"]["content"]
+
     def chat(self, nachrichten: list, max_tokens: int = 1500, temperatur: float = 0.3, beim_schreiben=lambda text: True) -> tuple[str, int, int]:
         """Gespräch (Text, Bilder als image_url) mit gestreamter Antwort. `beim_schreiben(text)` bekommt den bisher
         geschriebenen Text; gibt es False zurück (in KAI gestoppt), hört das Modell auf. → Text, Tokens ein/aus."""
