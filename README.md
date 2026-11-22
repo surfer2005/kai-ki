@@ -37,10 +37,12 @@ auf dem Mac, nichts geht ins Netz. **Zum Ausprobieren erst eine Kopie eines Ordn
 4. In der Liste prüfen: Zielordner und neuen Namen per Doppelklick ändern; rechts die vorgeschlagenen Ordner — dort umbenennen
    gilt für alle Dateien darin (z. B. „Rechnung“ und „Rechnungen“ zusammenlegen). „Verschieben“ ist vorgewählt, „Umbenennen“ nicht.
    „unklar“ = die KI war unsicher oder hat Unbrauchbares geantwortet → wird nicht verschoben, bis du selbst einen Ordner einträgst.
-   Gleicher Inhalt (Prüfsumme) → Vorschlag Ordner „Doppelt?“ — die Kopie wird nur dorthin verschoben, nie gelöscht.
+   Gleicher Inhalt (Prüfsumme) → Vorschlag Ordner „Doppelt“ (bis 0.1.20 „Doppelt?“) — die Kopie wird nur dorthin verschoben,
+   nie gelöscht; der Hinweis nennt, wo die gleiche Datei liegt.
 5. **Ausgewählte ausführen** — verschiebt bzw. benennt um. **Letzten Lauf rückgängig machen** stellt den Stand davor wieder her.
 
-Sicherheitsregeln (`kai_ki/aufraeumen.py`, geprüft in `tests/test_aufraeumen.py` und `tests/test_aufraeumen_fenster.py`):
+Sicherheitsregeln (`kai_ki/aufraeumen.py`, geprüft in `tests/test_aufraeumen.py`, `tests/test_aufraeumen_auswahl.py` und
+`tests/test_aufraeumen_fenster.py`):
 - Gearbeitet wird nur im gewählten Ordner und seinen Unterordnern. Verweise (Symlinks) werden nie verfolgt, versteckte Dateien und
   Pakete (.app, .photoslibrary, .pages-Ordner …) ausgelassen. Was die KI vorschlägt, wird geprüft: kein „..“, kein absoluter Pfad,
   keine versteckten Ordner, keine Paket-Endungen, höchstens 4 Ebenen; die Dateiendung bleibt immer gleich. Texte aus den Dateien
@@ -52,6 +54,42 @@ Sicherheitsregeln (`kai_ki/aufraeumen.py`, geprüft in `tests/test_aufraeumen.py
   (alt → neu, Zeit, angelegte Ordner). Kann das Protokoll nicht geschrieben werden, wird nichts verschoben.
 - **Rückgängig** geht rückwärts durch das Protokoll; ist ein alter Platz inzwischen belegt, kommt die Datei mit „ (2)“ daneben.
   Angelegte Ordner werden nur entfernt, wenn sie leer sind. Die früheren Läufe stehen unten im Reiter.
+
+### In die vorhandene Ablage einsortieren (ab 0.1.21)
+
+Es gibt **einen** Startordner (z. B. Dokumente) — alle neuen Ordner entstehen darin. Darunter steht **„Was aufräumen?“**: die losen
+Dateien direkt im Startordner und je Ordner zwei Häkchen (Unterordner klappen auf).
+
+- **Aufräumen** angehakt = unaufgeräumt: nur diese Dateien bekommen Vorschläge. Diese Ordner sind nie Ziel, die KI sieht sie nicht.
+- **nichts** angehakt = die übrigen Ordner sind die **vorhandene Ablage**: dort wird nie etwas angefasst, aber hineinsortiert. Die KI
+  bekommt den Ordnerbaum mit Anzahl Dateien und 2–3 Beispielnamen der neuesten Dateien je Ordner, nimmt vorhandene Ordner (auch
+  Jahresordner) und übernimmt deren Namensschema; neue Ordner nur, wenn nichts passt.
+- **Kein Ziel** = bleibt liegen und ist kein Ziel — die KI sieht den Ordner gar nicht (für Ordner, die erst später drankommen).
+- Nichts angehakt = wie 0.1.20, der ganze Startordner wird aufgeräumt.
+
+Beispiel: Dokumente mit „Rechnungen“, „Versicherungen“, „Boot“ und „unaufgeräumt 1“ bis „unaufgeräumt 4“. Zuerst bei „unaufgeräumt 1“
+und „unaufgeräumt 2“ **Aufräumen** anhaken, bei „unaufgeräumt 3“ und „unaufgeräumt 4“ **Kein Ziel** (die kommen später). Die KI sortiert
+die Dateien aus 1 und 2 nach „Rechnungen/2026“, „Versicherungen“ … ein. Eine Datei, die es in der Ablage schon gibt, kommt nach
+„Doppelt“ (der Hinweis nennt z. B. „Versicherungen/Allianz Police.pdf“). Beim nächsten Mal „unaufgeräumt 3“ anhaken: Ordner, die frühere
+Läufe angelegt oder befüllt haben, stehen als „aus früheren Läufen“ in der Liste und gehen der KI zuerst („hierhin bevorzugt“);
+„unaufgeräumt 1“/„2“ werden, sobald sie leer sind, nicht mehr angeboten.
+
+- Die Auswahl wird **je Startordner gemerkt**. Ein Vorschlag merkt sich, mit welcher Auswahl er gemacht wurde; Vorschläge aus 0.1.20
+  lassen sich weiter laden (sie gelten für den ganzen Ordner).
+- „höchstens … Dateien“ zählt nur die angehakten Ordner. Ist die Grenze erreicht: **Weitere Dateien übrig — nach dem Ausführen einfach
+  noch einmal „Vorschlag erstellen“** (Erledigtes ist dann weg).
+- Doppelte werden auch gegen die Ablage gesucht (Prüfsumme).
+- Leere Quellordner bleiben stehen; nach dem Ausführen nennt die Meldung sie — löschen kannst du sie selbst. Rückgängig je Lauf.
+- Unterordner auf einem anderen Laufwerk (eingehängt) werden ausgelassen, mit Meldung. Es gibt keinen Laufwerkswechsel mehr.
+- Rechts bei den Zielordnern steht **„neu“**, wenn der Ordner beim Ausführen angelegt würde.
+
+**Liste: Suche, Schnellfilter, Häkchen im Listenkopf**
+- Suchfeld über der Liste: findet den Text in Dateiname/bisherigem Ordner, Zielordner, neuem Namen, Hinweis oder „gleiche Datei wie“.
+- Schnellfilter **Alle · Doppelt · Unklar · Neuer Ordner · Bleibt** mit Anzahl („Bleibt“ = liegt schon richtig).
+- Im Listenkopf je ein Häkchen **Verschieben** und **Umbenennen** (alle / keine / teils). Sie wirken **nur auf die gerade sichtbaren
+  Zeilen**. Beispiel: Filter „Doppelt“ → Kopf-Häkchen „Verschieben“ aus → keine Kopie wird angefasst, alles andere bleibt wie es ist.
+  Zeilen ohne Zielordner („unklar“) und „liegt schon richtig“ werden beim Anhaken übersprungen.
+- Suche, Filter und alle Häkchen stehen im gemerkten Vorschlag.
 
 ## Reiter „Training“ (ab 0.1.18)
 

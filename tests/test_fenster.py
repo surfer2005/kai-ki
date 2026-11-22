@@ -60,14 +60,17 @@ def test_reiter_training_ohne_kopplung(fenster):
 
 
 def test_reiter_aufraeumen_ohne_ordner(fenster):
-    """Reiter „Aufräumen“ (0.1.20): ohne Ordner und ohne Modell ist nur „Ordner wählen“ möglich, nichts ist gestaucht."""
+    """Reiter „Aufräumen“ (0.1.20/0.1.21): ohne Ordner und ohne Modell ist nur „Startordner wählen“ möglich, nichts ist
+    gestaucht; „Was aufräumen?“, Suche und Schnellfilter sind da."""
     f, app = fenster
     reiter = f.centralWidget()
     reiter.setCurrentIndex(3); app.processEvents()
     a = f.aufraeumen
     assert a.ordner_knopf.isEnabled() and not a.start_knopf.isEnabled() and not a.ausfuehren_knopf.isEnabled()
     assert not a.abbruch_knopf.isEnabled() and not a.zurueck_knopf.isEnabled()
-    for w in (a.ordner_knopf, a.start_knopf, a.ausfuehren_knopf, a.zurueck_knopf, a.max_dateien, a.seiten):
+    assert a.auswahl_baum.topLevelItemCount() == 0 and list(a.filter_knoepfe) == ["alle", "doppelt", "unklar", "neu", "bleibt"]
+    for w in (a.ordner_knopf, a.start_knopf, a.ausfuehren_knopf, a.zurueck_knopf, a.max_dateien, a.seiten, a.suche,
+              *a.filter_knoepfe.values()):
         assert w.height() >= w.minimumSizeHint().height(), w
     f.resize(560, 480); app.processEvents()
-    assert a.tabelle.height() >= 100
+    assert a.tabelle.height() >= 100 and a.auswahl_baum.height() >= 60

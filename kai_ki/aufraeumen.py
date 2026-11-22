@@ -7,6 +7,12 @@ je Datei einen Zielordner und einen Dateinamen vor; ausgeführt wird erst, wenn 
 - nie löschen, nie überschreiben: gibt es den Zielnamen schon, bekommt die Datei „ (2)“, „ (3)“ … (Umbenennen „exklusiv“ —
   das Betriebssystem verweigert das Überschreiben selbst, wo es das kann);
 - jede Aktion steht VOR dem Verschieben im Protokoll (JSON im App-Datenordner); „Rückgängig“ stellt einen Lauf rückwärts wieder her.
+
+Ab 0.1.21 (Peter: „als Startordner den Dokumentenordner nehmen, dort werden die neuen angelegt“): unter dem Startordner wählst du,
+WAS aufgeräumt wird — lose Dateien direkt im Startordner und/oder einzelne Unterordner (z. B. „unaufgeräumt 1“). Nur deren Dateien
+bekommen Vorschläge, diese Ordner sind nie Ziel. Alles andere ist die vorhandene Ablage: wird nie angefasst, die KI sieht ihren
+Ordnerbaum mit Beispielnamen und sortiert dorthin ein. „Kein Ziel“-Ordner (z. B. „unaufgeräumt 3“ für später) sieht die KI gar
+nicht. Nichts gewählt = der ganze Startordner wie in 0.1.20.
 """
 import ctypes
 import errno
@@ -26,7 +32,10 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-DOPPELT_ORDNER = "Doppelt?"
+DOPPELT_ORDNER = "Doppelt"
+DOPPELT_NAMEN = ("doppelt", "doppelt?")       # „Doppelt?“ = Name in 0.1.20 (USB-Sticks/Windows kennen kein „?“)
+BAUM_ZEICHEN = 6000           # so viel Ordnerbaum geht je Datei an die KI (steht vorn → llama.cpp rechnet ihn nur einmal)
+BAUM_BEISPIELE = 3            # Beispiel-Dateinamen je Ordner (die neuesten)
 MAX_TIEFE = 4                 # Ebenen eines vorgeschlagenen Zielordners
 MAX_TEIL = 80                 # Zeichen je Ordnername
 MAX_NAME = 120                # Zeichen eines Dateinamens (ohne Endung)
@@ -81,12 +90,31 @@ def _ist_paket(eintrag: os.DirEntry) -> bool:
         return False
 
 
-def sammeln(wurzel, unterordner: bool = True, max_dateien: int | None = None, halt: threading.Event | None = None):
-    """Dateien und Ordner unterhalb von `wurzel` → (dateien, ordner, zu_viele). Verweise, Versteckte und Pakete fallen weg.
-    dateien = [{pfad (relativ, mit /), groesse, geaendert, art}] — sortiert, damit ein Lauf wiederholbar ist."""
+def _geraet(pfad) -> int:
+    return os.stat(pfad).st_dev
+
+
+def _drin(rel: str, basis) -> bool:
+    """rel ist `basis` oder liegt darin (Groß-/Kleinschreibung egal, wie auf dem Mac)."""
+    a, b = rel.casefold(), basis.casefold()
+    return a == b or a.startswith(b + "/")
+
+
+def _in_einem(rel: str, basen) -> str | None:
+    return next((b for b in basen if b and _drin(rel, b)), None)
+
+
+def sammeln(wurzel, unterordner: bool = True, max_dateien: int | None = None, halt: threading.Event | None = None,
+            ausnehmen=(), meldungen: list | None = None, praefix: str = "", geraet: int | None = None):
+    """Dateien und Ordner unterhalb von `wurzel` → (dateien, ordner, zu_viele). Verweise, Versteckte und Pakete fallen weg,
+    ebenso Ordner in `ausnehmen` (relativ zum Startordner) und eingehängte Ordner auf einem anderen Laufwerk (→ `meldungen`).
+    dateien = [{pfad (relativ zum Startordner, mit /), groesse, geaendert, art}] — sortiert, damit ein Lauf wiederholbar ist.
+    `praefix` = Pfad von `wurzel` relativ zum Startordner (wenn nur ein Unterordner gesammelt wird)."""
     wurzel = Path(wurzel)
     dateien, ordner, zu_viele = [], [], False
-    stapel = [("", wurzel)]
+    if geraet is None:
+        geraet = _geraet(wurzel)
+    stapel = [(praefix, wurzel)]
     while stapel:
         rel, pfad = stapel.pop()
         try:
@@ -105,7 +133,11 @@ def sammeln(wurzel, unterordner: bool = True, max_dateien: int | None = None, ha
                 if _versteckt(e.name, e.stat(follow_symlinks=False)):
                     continue
                 if e.is_dir(follow_symlinks=False):
-                    if _ist_paket(e):
+                    if _ist_paket(e) or _in_einem(r, ausnehmen):
+                        continue
+                    if e.stat(follow_symlinks=False).st_dev != geraet:
+                        if meldungen is not None:
+                            meldungen.append(f"„{r}“ liegt auf einem anderen Laufwerk — ausgelassen")
                         continue
                     ordner.append(r)
                     if unterordner:
@@ -156,11 +188,395 @@ def doppelte_finden(wurzel, dateien: list, halt: threading.Event | None = None) 
     for gruppe in nach_summe.values():
         if len(gruppe) < 2:
             continue
-        # Original bleibt: nicht schon im Ordner „Doppelt?“, dann die älteste, dann der kürzeste Pfad
-        gruppe.sort(key=lambda d: (d["pfad"].split("/")[0] == DOPPELT_ORDNER, d["geaendert"], len(d["pfad"]), d["pfad"]))
+        # Original bleibt: nicht schon im Ordner „Doppelt“, dann die älteste, dann der kürzeste Pfad
+        gruppe.sort(key=lambda d: (d["pfad"].split("/")[0].casefold() in DOPPELT_NAMEN, d["geaendert"], len(d["pfad"]), d["pfad"]))
         for d in gruppe[1:]:
             raus[d["pfad"]] = gruppe[0]["pfad"]
     return raus
+
+
+def doppelte_in_ablage(wurzel, dateien: list, ablage: list, halt: threading.Event | None = None) -> dict:
+    """Quelldateien mit gleichem Inhalt wie eine Datei der vorhandenen Ablage → {pfad der Quelldatei: pfad in der Ablage}.
+    Gerechnet wird nur bei gleicher Größe; eine Ablage-Datei außerhalb eines Doppelt-Ordners wird bevorzugt genannt."""
+    wurzel = Path(wurzel)
+    nach_groesse: dict = {}
+    for z in ablage:
+        if z["groesse"] > 0:
+            nach_groesse.setdefault(z["groesse"], []).append(z)
+    for gruppe in nach_groesse.values():
+        gruppe.sort(key=lambda z: (z["pfad"].split("/")[0].casefold() in DOPPELT_NAMEN, z["pfad"]))
+    raus = {}
+    for d in dateien:
+        kandidaten = nach_groesse.get(d["groesse"]) if d["groesse"] > 0 else None
+        if not kandidaten:
+            continue
+        if halt and halt.is_set():
+            break
+        try:
+            summe = d.get("pruefsumme") or pruefsumme(wurzel / d["pfad"])
+        except OSError:
+            continue
+        d["pruefsumme"] = summe
+        for z in kandidaten:
+            if "pruefsumme" not in z:
+                try:
+                    z["pruefsumme"] = pruefsumme(wurzel / z["pfad"])
+                except OSError:
+                    z["pruefsumme"] = None
+            if z["pruefsumme"] == summe:
+                raus[d["pfad"]] = z["pfad"]
+                break
+    return raus
+
+
+# ---------------------------------------------------------------- Vorhandene Ablage (Ordnerbaum für die KI)
+
+def ordnerbaum(wurzel, ausnehmen=(), mit_dateien: bool = True, lose_dateien: bool = True, max_dateien: int = 200_000,
+               halt: threading.Event | None = None, meldungen: list | None = None) -> dict:
+    """Die vorhandene Ablage unter `wurzel` (ohne `ausnehmen`, Versteckte, Verweise, Pakete, andere Laufwerke):
+    ordner = [{pfad, tiefe, direkt, gesamt, beispiele}] bis MAX_TIEFE (beispiele = die neuesten Dateinamen),
+    vorhanden = alle Ordnerpfade bis MAX_TIEFE, dateien = alle Dateien (für die Suche nach Doppelten; ohne lose Dateien im
+    Startordner, wenn `lose_dateien` aus ist). Bei mehr als `max_dateien` Dateien hört das Lesen auf (unvollstaendig)."""
+    wurzel = Path(wurzel)
+    geraet = _geraet(wurzel)
+    ordner: dict = {}
+    dateien, gezaehlt, unvollstaendig = [], 0, False
+    stapel = [("", wurzel, 0)]
+    while stapel and not unvollstaendig:
+        rel, pfad, tiefe = stapel.pop()
+        try:
+            with os.scandir(pfad) as it:
+                eintraege = sorted(it, key=lambda e: e.name.casefold())
+        except OSError:
+            continue
+        unter = []
+        for e in eintraege:
+            if halt and halt.is_set():
+                unvollstaendig = True
+                break
+            if _versteckt(e.name) or e.is_symlink():
+                continue
+            r = f"{rel}/{e.name}" if rel else e.name
+            try:
+                st = e.stat(follow_symlinks=False)
+                if _versteckt(e.name, st):
+                    continue
+                if stat.S_ISDIR(st.st_mode):
+                    if _ist_paket(e) or _in_einem(r, ausnehmen):
+                        continue
+                    if st.st_dev != geraet:
+                        if meldungen is not None:
+                            meldungen.append(f"„{r}“ liegt auf einem anderen Laufwerk — ausgelassen")
+                        continue
+                    if tiefe + 1 <= MAX_TIEFE:
+                        ordner[r] = {"pfad": r, "tiefe": tiefe + 1, "direkt": 0, "gesamt": 0, "beispiele": []}
+                    if mit_dateien or tiefe + 1 < MAX_TIEFE:
+                        unter.append((r, Path(e.path), tiefe + 1))
+                elif stat.S_ISREG(st.st_mode):
+                    gezaehlt += 1
+                    if gezaehlt > max_dateien:
+                        unvollstaendig = True
+                        break
+                    o = ordner.get(rel)
+                    if o is not None:
+                        o["direkt"] += 1
+                        o["beispiele"] = sorted(o["beispiele"] + [(st.st_mtime, e.name)], reverse=True)[:BAUM_BEISPIELE]
+                    teile = rel.split("/") if rel else []
+                    for i in range(1, len(teile) + 1):
+                        a = ordner.get("/".join(teile[:i]))
+                        if a is not None:
+                            a["gesamt"] += 1
+                    if mit_dateien and (rel or lose_dateien):
+                        dateien.append({"pfad": r, "groesse": st.st_size, "geaendert": st.st_mtime})
+            except OSError:
+                continue
+        stapel.extend(reversed(unter))
+    return {"ordner": sorted(ordner.values(), key=lambda o: o["pfad"].casefold()), "vorhanden": sorted(ordner),
+            "dateien": dateien, "unvollstaendig": unvollstaendig}
+
+
+def vorhandene_ordner(wurzel) -> list[str]:
+    """Alle Ordnerpfade bis MAX_TIEFE (für die Anzeige „neuer Ordner“) — liest keine Dateien."""
+    try:
+        return ordnerbaum(wurzel, mit_dateien=False)["vorhanden"]
+    except OSError:
+        return []
+
+
+def _sauber(t: str, laenge: int) -> str:
+    t = re.sub(r"[\x00-\x1f\x7f]+", " ", t).strip()
+    return t if len(t) <= laenge else t[: laenge - 1] + "…"
+
+
+def baum_text(ordner: list, frueher=(), zeichen: int = BAUM_ZEICHEN) -> str:
+    """Ordnerbaum für die KI: je Ordner Anzahl Dateien + die neuesten Beispielnamen. Ordner aus früheren Läufen zuerst (eigener
+    Abschnitt, „bevorzugt“). Passt nicht alles in `zeichen`, gewinnen flache und volle Ordner; der Rest wird nur gezählt."""
+    sichtbar = [o for o in ordner if o["pfad"].split("/")[0].casefold() not in DOPPELT_NAMEN]
+    if not sichtbar:
+        return "(noch keine Unterordner)"
+    fr = {f.casefold() for f in frueher}
+
+    def zeile(o, mit_beispielen=True):
+        z = f"{_sauber(o['pfad'], 160)} — {o['direkt']} {'Datei' if o['direkt'] == 1 else 'Dateien'}"
+        if mit_beispielen and o["beispiele"]:
+            z += ", z. B.: " + "; ".join(_sauber(n, 60) for _, n in o["beispiele"])
+        return z
+    rang = sorted(sichtbar, key=lambda o: (o["pfad"].casefold() not in fr, o["tiefe"], -o["gesamt"], o["pfad"].casefold()))
+    gewaehlt, laenge = [], 0
+    for o in rang:
+        z = zeile(o)
+        if laenge + len(z) + 1 > zeichen:
+            z = zeile(o, False)
+            if laenge + len(z) + 1 > zeichen:
+                continue
+        gewaehlt.append((o["pfad"], z)); laenge += len(z) + 1
+    vorn = sorted((p, z) for p, z in gewaehlt if p.casefold() in fr)
+    hinten = sorted(((p, z) for p, z in gewaehlt if p.casefold() not in fr), key=lambda x: x[0].casefold())
+    zeilen = []
+    if vorn:
+        zeilen += ["Aus früheren Läufen — hierhin bevorzugt einsortieren:"] + [z for _, z in vorn] + ["Weitere vorhandene Ordner:"]
+    zeilen += [z for _, z in hinten]
+    rest = len(sichtbar) - len(gewaehlt)
+    if rest:
+        zeilen.append(f"(… und {rest} weitere Ordner, hier nicht aufgeführt)")
+    return "\n".join(zeilen)
+
+
+def ordner_angleichen(o: str, vorhanden: dict) -> str:
+    """Schreibweise vorhandener Ordner übernehmen („rechnungen/2027“ → „Rechnungen/2027“). vorhanden = {pfad.casefold(): pfad}."""
+    if not o:
+        return o
+    raus: list[str] = []
+    for teil in o.split("/"):
+        kandidat = "/".join(raus + [teil])
+        raus.append(_name_von(vorhanden.get(kandidat.casefold(), kandidat)))
+    return "/".join(raus)
+
+
+def ist_leer(pfad) -> bool:
+    """Liegt in dem Ordner (samt Unterordnern) keine sichtbare Datei mehr? Versteckte (.DS_Store) zählen nicht, Verweise schon."""
+    stapel = [Path(pfad)]
+    while stapel:
+        p = stapel.pop()
+        try:
+            with os.scandir(p) as it:
+                for e in it:
+                    if _versteckt(e.name):
+                        continue
+                    if e.is_symlink():
+                        return False
+                    if e.is_dir(follow_symlinks=False):
+                        stapel.append(Path(e.path))
+                    else:
+                        return False
+        except OSError:
+            return False
+    return True
+
+
+def leere_ordner(wurzel, kandidaten) -> list[str]:
+    """Von den Kandidaten (relativ) die Ordner, die jetzt leer sind — nur die obersten (nicht auch noch deren Unterordner)."""
+    wurzel = Path(wurzel)
+    leer = sorted({k for k in kandidaten if k and os.path.isdir(wurzel / k) and not os.path.islink(wurzel / k) and ist_leer(wurzel / k)},
+                  key=lambda k: (k.count("/"), k.casefold()))
+    raus: list[str] = []
+    for k in leer:
+        if not any(_drin(k, r) for r in raus):
+            raus.append(k)
+    return sorted(raus, key=str.casefold)
+
+
+# ---------------------------------------------------------------- Was aufräumen? (Auswahl je Startordner)
+
+def auswahl_ordnen(auswahl) -> dict:
+    """{lose, ordner, auslassen} prüfen: nur gültige relative Pfade, ohne Doppelungen; ein Unterordner eines gewählten Ordners
+    zählt nicht extra; „auslassen“ ohne die aufzuräumenden."""
+    a = auswahl if isinstance(auswahl, dict) else {}
+
+    def liste(werte):
+        raus = []
+        for w in werte or []:
+            try:
+                _rel_teile(w)
+            except AufraeumFehler:
+                continue
+            raus.append(w)
+        raus = sorted(set(raus), key=lambda x: (x.count("/"), x.casefold()))
+        oben: list[str] = []
+        for w in raus:
+            if not any(_drin(w, o) for o in oben):
+                oben.append(w)
+        return sorted(oben, key=str.casefold)
+    ordner = liste(a.get("ordner"))
+    auslassen = [w for w in liste(a.get("auslassen")) if not _in_einem(w, ordner)]
+    return {"lose": bool(a.get("lose")), "ordner": ordner, "auslassen": auslassen}
+
+
+def ganzer_ordner(auswahl) -> bool:
+    """Nichts zum Aufräumen gewählt = der ganze Startordner wie in 0.1.20."""
+    a = auswahl_ordnen(auswahl)
+    return not a["lose"] and not a["ordner"]
+
+
+def quellen_sammeln(wurzel, auswahl, unterordner: bool = True, max_dateien: int | None = None,
+                    halt: threading.Event | None = None, meldungen: list | None = None, ausnehmen=()) -> tuple[list, bool]:
+    """Die Dateien, die Vorschläge bekommen: lose Dateien im Startordner und/oder die gewählten Ordner — die Höchstzahl gilt nur
+    für diese. Nichts gewählt = der ganze Startordner (ohne `ausnehmen`)."""
+    wurzel = Path(wurzel)
+    a = auswahl_ordnen(auswahl)
+    weg = list(ausnehmen) + a["auslassen"]
+    if ganzer_ordner(a):
+        d, _o, z = sammeln(wurzel, unterordner, max_dateien, halt, ausnehmen=weg, meldungen=meldungen)
+        return d, z
+    geraet = _geraet(wurzel)
+    dateien, zu_viele = [], False
+    if a["lose"]:
+        d, _o, z = sammeln(wurzel, False, max_dateien, halt, meldungen=meldungen)
+        dateien += d; zu_viele = zu_viele or z
+    for q in a["ordner"]:
+        rest = None if max_dateien is None else max_dateien - len(dateien)
+        if rest is not None and rest <= 0:
+            zu_viele = True
+            break
+        try:
+            quelle_ordner_pruefen(wurzel, q)
+        except AufraeumFehler as ex:
+            if meldungen is not None:
+                meldungen.append(str(ex))
+            continue
+        p = wurzel / q
+        if _geraet(p) != geraet:
+            if meldungen is not None:
+                meldungen.append(f"„{q}“ liegt auf einem anderen Laufwerk — ausgelassen")
+            continue
+        d, _o, z = sammeln(p, unterordner, rest, halt, ausnehmen=weg, meldungen=meldungen, praefix=q, geraet=geraet)
+        dateien += d; zu_viele = zu_viele or z
+    return dateien, zu_viele
+
+
+def quelle_ordner_pruefen(wurzel: Path, rel: str) -> Path:
+    """Ein gewählter Ordner: echter Ordner (kein Verweis, auch nicht unterwegs) innerhalb des Startordners."""
+    p = Path(wurzel)
+    for t in _rel_teile(rel):
+        p = p / t
+        try:
+            st = os.lstat(p)
+        except FileNotFoundError:
+            raise AufraeumFehler(f"„{rel}“ gibt es nicht mehr") from None
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            raise AufraeumFehler(f"„{rel}“ ist kein echter Ordner (Verweis?) — ausgelassen")
+    return p
+
+
+def fruehere_laeufe(protokoll_ordner, wurzel) -> dict:
+    """Aus den (nicht zurückgenommenen) Protokollen dieses Startordners: welche Ordner früher Quelle waren und welche Ordner
+    frühere Läufe angelegt oder befüllt haben."""
+    w = os.path.realpath(wurzel)
+    quellen, befuellt = set(), set()
+    for f in Path(protokoll_ordner).glob("lauf-*.json"):
+        try:
+            p = json.loads(f.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(p, dict) or p.get("rueckgaengig") or os.path.realpath(p.get("wurzel") or "") != w:
+            continue
+        quellen |= set(p.get("quellen") or [])
+        for a in p.get("aktionen") or []:
+            o = ordner_von(a.get("neu") or "")
+            if o and o != ordner_von(a.get("alt") or ""):
+                befuellt.add(o)
+        befuellt |= set(p.get("ordner_angelegt") or [])
+    befuellt = {b for b in befuellt if not _in_einem(b, quellen)}
+    return {"quellen": sorted(quellen, key=str.casefold), "befuellt": sorted(befuellt, key=str.casefold)}
+
+
+def _auswahl_datei(protokoll_ordner) -> Path:
+    return Path(protokoll_ordner) / "auswahl.json"
+
+
+def auswahl_laden(protokoll_ordner, wurzel) -> dict:
+    try:
+        alle = json.loads(_auswahl_datei(protokoll_ordner).read_text("utf-8"))
+    except (OSError, ValueError):
+        return auswahl_ordnen({})
+    return auswahl_ordnen((alle or {}).get(os.path.realpath(wurzel)) if isinstance(alle, dict) else {})
+
+
+def auswahl_speichern(protokoll_ordner, wurzel, auswahl) -> None:
+    try:
+        alle = json.loads(_auswahl_datei(protokoll_ordner).read_text("utf-8"))
+        alle = alle if isinstance(alle, dict) else {}
+    except (OSError, ValueError):
+        alle = {}
+    alle[os.path.realpath(wurzel)] = auswahl_ordnen(auswahl)
+    _schreiben(_auswahl_datei(protokoll_ordner), alle)
+
+
+def _dateien_zaehlen(pfad: Path, bis: int = 5000) -> tuple[int, bool]:
+    n, stapel = 0, [pfad]
+    while stapel:
+        p = stapel.pop()
+        try:
+            with os.scandir(p) as it:
+                for e in it:
+                    if _versteckt(e.name) or e.is_symlink():
+                        continue
+                    if e.is_dir(follow_symlinks=False):
+                        if not _ist_paket(e):
+                            stapel.append(Path(e.path))
+                    elif e.is_file(follow_symlinks=False):
+                        n += 1
+                        if n >= bis:
+                            return n, True
+        except OSError:
+            continue
+    return n, False
+
+
+def ordner_zur_auswahl(wurzel, rel: str = "", frueher: dict | None = None, zaehlen_bis: int = 5000) -> list[dict]:
+    """Die Ordner direkt unter `wurzel/rel` für „Was aufräumen?“: Anzahl Dateien, aus früheren Läufen, anderes Laufwerk.
+    Ordner, die früher Quelle waren und jetzt leer sind, fehlen (sie werden nicht mehr vorgeschlagen)."""
+    wurzel = Path(wurzel)
+    basis = wurzel / rel if rel else wurzel
+    frueher = frueher or {"quellen": [], "befuellt": []}
+    geraet = _geraet(wurzel)
+    raus = []
+    try:
+        with os.scandir(basis) as it:
+            eintraege = sorted(it, key=lambda e: e.name.casefold())
+    except OSError:
+        return raus
+    for e in eintraege:
+        if _versteckt(e.name) or e.is_symlink():
+            continue
+        try:
+            st = e.stat(follow_symlinks=False)
+            if _versteckt(e.name, st) or not stat.S_ISDIR(st.st_mode) or _ist_paket(e):
+                continue
+        except OSError:
+            continue
+        r = f"{rel}/{e.name}" if rel else e.name
+        if st.st_dev != geraet:
+            raus.append({"pfad": r, "name": e.name, "dateien": 0, "mehr": False, "anderes_laufwerk": True, "frueher_quelle": False,
+                         "frueher_befuellt": False, "hat_unterordner": False})
+            continue
+        frueher_quelle = any(_drin(r, q) for q in frueher["quellen"])
+        if frueher_quelle and ist_leer(e.path):
+            continue
+        n, mehr = _dateien_zaehlen(Path(e.path), zaehlen_bis)
+        try:
+            with os.scandir(e.path) as it2:
+                hat_unter = any(not _versteckt(x.name) and x.is_dir(follow_symlinks=False) and not x.is_symlink() for x in it2)
+        except OSError:
+            hat_unter = False
+        raus.append({"pfad": r, "name": e.name, "dateien": n, "mehr": mehr, "anderes_laufwerk": False, "frueher_quelle": frueher_quelle,
+                     "frueher_befuellt": any(_drin(b, r) for b in frueher["befuellt"]), "hat_unterordner": hat_unter})
+    return raus
+
+
+def lose_dateien_zaehlen(wurzel) -> int:
+    d, _o, _z = sammeln(wurzel, False)
+    return len(d)
 
 
 # ---------------------------------------------------------------- Inhalt lesen
@@ -301,7 +717,7 @@ def ordner_normalisieren(text, leer_erlaubt: bool = False) -> str | None:
         teil = teil.rstrip(" .")
         if not teil or len(teil) > MAX_TEIL:
             return None
-        if not _zeichen_ok(teil, erlaubt="?" if teil == DOPPELT_ORDNER else ""):
+        if not _zeichen_ok(teil, erlaubt="?" if teil == "Doppelt?" else ""):      # „Doppelt?“ aus 0.1.20-Vorschlägen
             return None
         if Path(teil).suffix.lower() in PAKETE:
             return None
@@ -389,26 +805,31 @@ def eintrag_aus_antwort(datei: dict, antwort: dict) -> dict:
     return status_auffrischen(e)
 
 
-def aufgabe(datei: dict, text: str, vorhanden: list, vorgeschlagen: Counter) -> str:
+def aufgabe(datei: dict, text: str, baum: str, neue: Counter | None = None, ganz: bool = True) -> str:
+    """Auftrag an die KI. Feste Teile (Regeln, Ordnerbaum) stehen vorn: llama.cpp rechnet diesen gleichbleibenden Anfang nur
+    einmal, je Datei kommt nur der hintere Teil dazu."""
     datum = datetime.fromtimestamp(datei["geaendert"]).strftime("%Y-%m-%d")
-    ordner_jetzt = ordner_von(datei["pfad"]) or "(oberste Ebene)"
+    ablage = "im aufgeräumten Ordner" if ganz else "in der vorhandenen Ablage"
     zeilen = [
-        "Schlage für die Datei unten einen Zielordner und einen Dateinamen vor.",
+        "Ordne die Datei unten in die Ordnerstruktur ein und schlage einen Dateinamen vor.",
         "Regeln:",
-        "- \"ordner\": Ordner INNERHALB des aufgeräumten Ordners, mit \"/\" getrennt, höchstens 3 Ebenen, kurze deutsche Namen, "
-        "z. B. \"Rechnungen/2026\", \"Versicherungen\", \"Boot\", \"Steuern/2025\", \"Fotos/2024\". Nutze vorhandene oder schon "
-        "vorgeschlagene Ordner, wo sie passen, statt ähnliche neue zu erfinden.",
-        "- \"name\": neuer Dateiname OHNE Endung, Form \"JJJJ-MM Absender Art\" (z. B. \"2026-10 Telekom Rechnung\"); Datum aus dem "
-        "Inhalt, sonst aus dem Dateidatum. Keine Zeichen / \\ : * ? \" < > |.",
+        "- \"ordner\": Ordner relativ zum Startordner, mit \"/\" getrennt, höchstens 4 Ebenen. Nimm einen VORHANDENEN Ordner aus der "
+        "Liste unten, wenn einer passt — zuerst die aus früheren Läufen, auch Unterordner wie Jahresordner (\"Rechnungen/2026\"). "
+        "Gibt es Jahresordner, wähle den passenden Jahrgang; fehlt das Jahr, lege es im selben Stil an. Einen ganz neuen Ordner nur, "
+        "wenn nichts passt: kurz, deutsch, im Stil der vorhandenen (z. B. \"Versicherungen\", \"Boot\", \"Steuern/2025\").",
+        "- \"name\": neuer Dateiname OHNE Endung. Übernimm das Namensschema der Beispieldateien im gewählten Ordner; gibt es keins, "
+        "Form \"JJJJ-MM Absender Art\" (z. B. \"2026-10 Telekom Rechnung\"). Datum aus dem Inhalt, sonst aus dem Dateidatum. "
+        "Keine Zeichen / \\ : * ? \" < > |.",
         "- \"grund\": ein kurzer Satz, warum.",
         "- Bist du unsicher, antworte {\"ordner\": null, \"name\": null, \"grund\": \"unklar\"}.",
+        "",
+        f"Vorhandene Ordner {ablage} (Anzahl Dateien, Beispielnamen der neuesten Dateien):",
+        baum,
     ]
-    if vorhanden:
-        zeilen.append("Vorhandene Ordner: " + "; ".join(vorhanden[:60]))
-    if vorgeschlagen:
-        zeilen.append("Schon vorgeschlagene Ordner: " + "; ".join(o for o, _ in vorgeschlagen.most_common(40)))
-    zeilen += ["", f"Datei: {_name_von(datei['pfad'])}", f"Liegt in: {ordner_jetzt}", f"Typ: {datei['art']}",
-               f"Größe: {groesse_text(datei['groesse'])}", f"Geändert am: {datum}"]
+    if neue:
+        zeilen.append("Schon vorgeschlagene NEUE Ordner: " + "; ".join(o for o, _ in neue.most_common(40)))
+    zeilen += ["", f"Datei: {_name_von(datei['pfad'])}", f"Liegt jetzt in: {ordner_von(datei['pfad']) or '(oberste Ebene)'}",
+               f"Typ: {datei['art']}", f"Größe: {groesse_text(datei['groesse'])}", f"Geändert am: {datum}"]
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]+", " ", text or "").replace("<<<", "").replace(">>>", "").strip()
     if text:
         zeilen += ["Inhalt (Auszug, Texterkennung kann Fehler enthalten):", "<<<", text, ">>>"]
@@ -425,14 +846,36 @@ def groesse_text(b: int) -> str:
     return f"{b} Bytes"
 
 
+def ziel_gesperrt(ordner: str, gesperrt) -> str | None:
+    """Liegt der Zielordner in einem aufzuräumenden oder ausgeschlossenen Ordner? (gilt auch für deine Eingaben)"""
+    g = _in_einem(ordner, gesperrt) if ordner else None
+    return f"„{g}“ ist ein unaufgeräumter bzw. ausgeschlossener Ordner — dort wird nichts abgelegt" if g else None
+
+
+def kein_ziel_grund(ordner: str, gesperrt) -> str | None:
+    """Darf die KI hierhin einsortieren? Nicht in aufzuräumende/ausgeschlossene Ordner und nicht in „Doppelt“ (nur für Kopien)."""
+    if not ordner:
+        return None
+    g = ziel_gesperrt(ordner, gesperrt)
+    if g:
+        return g
+    if ordner.split("/")[0].casefold() in DOPPELT_NAMEN:
+        return f"„{ordner.split('/')[0]}“ ist nur für Kopien gedacht"
+    return None
+
+
 class Vorschlagslauf:
     """Liest die Dateien, fragt die KI je Datei und liefert Einträge (nichts wird verändert). Läuft im Hintergrund-Thread;
-    `frage(system, text)` → Antworttext der KI. `stand(i, n, text)` und `eintrag(e)` gehen an die Oberfläche."""
+    `frage(system, text)` → Antworttext der KI. `stand(i, n, text)` und `eintrag(e)` gehen an die Oberfläche.
+    `auswahl` = {lose, ordner, auslassen} („Was aufräumen?“), `frueher` = fruehere_laeufe() dieses Startordners."""
 
-    def __init__(self, wurzel, frage, *, unterordner: bool = True, max_dateien: int = 300, seiten: int = 2, zeichen: int = 2000,
-                 inhalt: bool = True, stand=lambda i, n, t: None, eintrag=lambda e: None, lesen=inhalt_lesen):
+    def __init__(self, wurzel, frage, *, auswahl=None, frueher: dict | None = None, unterordner: bool = True, max_dateien: int = 300,
+                 seiten: int = 2, zeichen: int = 2000, inhalt: bool = True, stand=lambda i, n, t: None, eintrag=lambda e: None,
+                 lesen=inhalt_lesen):
         self.wurzel = Path(os.path.realpath(wurzel))
         self.frage, self.lesen = frage, lesen
+        self.auswahl = auswahl_ordnen(auswahl)
+        self.frueher = frueher or {"quellen": [], "befuellt": []}
         self.unterordner, self.max_dateien, self.seiten, self.zeichen, self.inhalt = unterordner, max_dateien, seiten, zeichen, inhalt
         self.stand, self.eintrag = stand, eintrag
         self.halt = threading.Event()
@@ -440,25 +883,47 @@ class Vorschlagslauf:
     def abbrechen(self) -> None:
         self.halt.set()
 
+    def leere_fruehere_quellen(self) -> list[str]:
+        """Früher aufgeräumte Ordner, die jetzt leer sind: kein Ziel mehr (die KI sieht sie nicht)."""
+        return [q for q in self.frueher["quellen"] if not _in_einem(q, self.auswahl["ordner"])
+                and os.path.isdir(self.wurzel / q) and ist_leer(self.wurzel / q)]
+
+    def gesperrt(self) -> list[str]:
+        return self.auswahl["ordner"] + self.auswahl["auslassen"] + self.leere_fruehere_quellen()
+
     def laufen(self) -> dict:
+        meldungen: list = []
+        ganz = ganzer_ordner(self.auswahl)
+        gesperrt = self.gesperrt()
         self.stand(0, 0, "Dateien werden gesammelt …")
-        dateien, vorhanden, zu_viele = sammeln(self.wurzel, self.unterordner, self.max_dateien, self.halt)
+        dateien, zu_viele = quellen_sammeln(self.wurzel, self.auswahl, self.unterordner, self.max_dateien, self.halt, meldungen,
+                                            ausnehmen=self.leere_fruehere_quellen())
         n = len(dateien)
+        self.stand(0, n, "Vorhandene Ablage wird gelesen …")
+        baum = ordnerbaum(self.wurzel, ausnehmen=gesperrt, mit_dateien=not ganz, lose_dateien=not self.auswahl["lose"],
+                          halt=self.halt, meldungen=meldungen)
+        text_baum = baum_text(baum["ordner"], self.frueher["befuellt"])
+        vmap = {v.casefold(): v for v in baum["vorhanden"]}
         self.stand(0, n, "Doppelte werden gesucht …")
-        doppelt = doppelte_finden(self.wurzel, dateien, self.halt)
-        alle, vorgeschlagen, folge, fehler = [], Counter(), 0, ""
+        in_ablage = {} if ganz else doppelte_in_ablage(self.wurzel, dateien, baum["dateien"], self.halt)
+        intern = doppelte_finden(self.wurzel, [d for d in dateien if d["pfad"] not in in_ablage], self.halt)
+        alle, neue, folge, fehler = [], Counter(), 0, ""
         for i, d in enumerate(dateien):
             if self.halt.is_set():
                 break
             self.stand(i, n, d["pfad"])
-            if d["pfad"] in doppelt:
-                e = status_auffrischen({**d, "status": "doppelt", "ordner": DOPPELT_ORDNER, "name": "", "verschieben": True,
-                                        "umbenennen": False, "grund": f"gleicher Inhalt wie „{doppelt[d['pfad']]}“ — wird nie gelöscht"})
+            gleich = in_ablage.get(d["pfad"]) or intern.get(d["pfad"])
+            if gleich:
+                wo = " (liegt schon in der Ablage)" if d["pfad"] in in_ablage else ""
+                e = status_auffrischen({**d, "status": "doppelt", "ordner": ordner_angleichen(DOPPELT_ORDNER, vmap), "name": "",
+                                        "verschieben": True, "umbenennen": False, "gleich_wie": gleich,
+                                        "grund": f"gleicher Inhalt wie „{gleich}“{wo} — wird nie gelöscht"})
                 alle.append(e); self.eintrag(e)
                 continue
             text = self.lesen(self.wurzel / d["pfad"], self.seiten, self.zeichen, True) if self.inhalt else ""
             try:
-                antwort = antwort_pruefen(self.frage(SYSTEM, aufgabe(d, text, vorhanden, vorgeschlagen)), _stamm_endung(_name_von(d["pfad"]))[1])
+                antwort = antwort_pruefen(self.frage(SYSTEM, aufgabe(d, text, text_baum, neue, ganz)),
+                                          _stamm_endung(_name_von(d["pfad"]))[1])
                 folge = 0
             except Exception as ex:  # noqa: BLE001 — Modell weg/abgestürzt: Datei als Fehler, nach drei in Folge Schluss
                 folge += 1
@@ -470,19 +935,94 @@ class Vorschlagslauf:
                     break
                 continue
             e = eintrag_aus_antwort(d, antwort)
+            if e["ordner"]:
+                e["ordner"] = ordner_angleichen(e["ordner"], vmap)
+                sperre = kein_ziel_grund(e["ordner"], gesperrt)
+                if sperre:
+                    e.update(status="unklar", verschieben=False, grund=f"KI schlug „{e['ordner']}“ vor: {sperre}")
+                    e["ordner"] = ""
+                status_auffrischen(e)
             e["text"] = text[:300]
-            if e["status"] in ("vorschlag", "bleibt") and e["ordner"]:
-                vorgeschlagen[e["ordner"]] += 1
+            if e["status"] == "vorschlag" and e["ordner"] and e["ordner"].casefold() not in vmap:
+                neue[e["ordner"]] += 1
             alle.append(e); self.eintrag(e)
-        fertig = len(alle)
-        self.stand(fertig, n, "fertig")
-        return {"eintraege": alle, "abgebrochen": self.halt.is_set(), "zu_viele": zu_viele, "gesamt": n, "fehler": fehler}
+        self.stand(len(alle), n, "fertig")
+        return {"eintraege": alle, "abgebrochen": self.halt.is_set(), "zu_viele": zu_viele, "gesamt": n, "fehler": fehler,
+                "meldungen": sorted(set(meldungen)), "vorhanden": baum["vorhanden"], "ablage_unvollstaendig": baum["unvollstaendig"]}
 
 
-def ordner_liste(eintraege: list) -> list[tuple[str, int]]:
-    """Vorgeschlagene Zielordner mit Anzahl (für die Liste rechts, dort umbenennbar)."""
+def ordner_liste(eintraege: list, vorhanden=None) -> list[tuple[str, int, bool | None]]:
+    """Vorgeschlagene Zielordner mit Anzahl und ob er neu angelegt würde (None = unbekannt) — für die Liste rechts."""
+    vm = {v.casefold() for v in vorhanden} if vorhanden is not None else None
     c = Counter(e["ordner"] for e in eintraege if e.get("ordner") and e.get("status") != "unklar")
-    return sorted(c.items(), key=lambda x: x[0].casefold())
+    return [(o, k, None if vm is None else o.casefold() not in vm) for o, k in sorted(c.items(), key=lambda x: x[0].casefold())]
+
+
+FILTER = {"alle": "Alle", "doppelt": "Doppelt", "unklar": "Unklar", "neu": "Neuer Ordner", "bleibt": "Bleibt"}
+
+
+def _filter_passt(e: dict, filt: str, vm) -> bool:
+    st = e.get("status")
+    if filt == "doppelt":
+        return st == "doppelt"
+    if filt == "unklar":
+        return st in ("unklar", "fehler")
+    if filt == "bleibt":
+        return st == "bleibt"
+    if filt == "neu":
+        return bool(e.get("ordner")) and st not in ("unklar", "fehler") and vm is not None and e["ordner"].casefold() not in vm
+    return True
+
+
+def _vergleich(t: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", t).casefold().split())
+
+
+def _suche_passt(e: dict, suche: str) -> bool:
+    """Der Suchtext steht so in Dateiname/bisherigem Ordner, Zielordner, neuem Namen, Hinweis oder „gleiche Datei wie“
+    (Groß-/Kleinschreibung egal) — „unaufgeräumt 2“ findet also nicht auch „unaufgeräumt 1/scan2“."""
+    s = _vergleich(suche or "")
+    return not s or any(s in _vergleich(str(e.get(k) or "")) for k in ("pfad", "ordner", "name", "grund", "gleich_wie"))
+
+
+def sichtbare(eintraege: list, suche: str = "", filt: str = "alle", vorhanden=None) -> list[int]:
+    """Indizes der Zeilen, die Suche (Dateiname, bisheriger Ordner, Zielordner, neuer Name, Grund) und Schnellfilter treffen."""
+    vm = {v.casefold() for v in vorhanden} if vorhanden is not None else None
+    return [i for i, e in enumerate(eintraege) if _suche_passt(e, suche) and _filter_passt(e, filt, vm)]
+
+
+def filter_zaehlen(eintraege: list, suche: str = "", vorhanden=None) -> dict:
+    """Anzahl je Schnellfilter (innerhalb der Suche)."""
+    return {f: len(sichtbare(eintraege, suche, f, vorhanden)) for f in FILTER}
+
+
+def kann_setzen(e: dict, feld: str) -> bool:
+    """Darf das Häkchen „verschieben“/„umbenennen“ hier gesetzt werden?"""
+    if feld == "verschieben":
+        if e.get("ordner_ungueltig") or e.get("status") == "bleibt":
+            return False
+        return not (e.get("status") in ("unklar", "fehler") and not e.get("ordner"))
+    return bool(e.get("name")) and not e.get("name_ungueltig")
+
+
+def kopf_zustand(eintraege: list, indizes, feld: str) -> str:
+    """Kopf-Häkchen über die sichtbaren Zeilen: „alle“, „keine“, „teils“ — oder „leer“, wenn dort keins setzbar ist."""
+    werte = [bool(eintraege[i].get(feld)) for i in indizes if kann_setzen(eintraege[i], feld)]
+    if not werte:
+        return "leer"
+    return "alle" if all(werte) else "keine" if not any(werte) else "teils"
+
+
+def alle_setzen(eintraege: list, indizes, feld: str, wert: bool) -> int:
+    """Häkchen für alle sichtbaren Zeilen setzen bzw. entfernen (setzen nur, wo es geht). → Anzahl geänderter Zeilen."""
+    n = 0
+    for i in indizes:
+        e = eintraege[i]
+        if wert and not kann_setzen(e, feld):
+            continue
+        if bool(e.get(feld)) != wert:
+            e[feld] = wert; n += 1
+    return n
 
 
 def ordner_umbenennen(eintraege: list, alt: str, neu: str) -> int:
@@ -687,21 +1227,29 @@ def _rel(wurzel: Path, p: Path) -> str:
     return p.relative_to(wurzel).as_posix()
 
 
-def ausfuehren(wurzel, eintraege: list, protokoll_ordner, melden=lambda i, n: None) -> dict:
+def ausfuehren(wurzel, eintraege: list, protokoll_ordner, melden=lambda i, n: None, auswahl=None) -> dict:
     """Ausgewählte Einträge verschieben/umbenennen. Nie löschen, nie überschreiben. Ergebnis mit Lauf-Nummer und Fehlern;
-    `erledigt` = Indizes der ausgeführten Einträge."""
+    `erledigt` = Indizes der ausgeführten Einträge, `leere_ordner` = Ordner, aus denen jetzt alles heraus ist (sie bleiben
+    stehen — du kannst sie selbst löschen). `auswahl` („Was aufräumen?“): dorthin wird nie einsortiert."""
     wurzel = Path(os.path.realpath(wurzel))
     protokoll_ordner = Path(protokoll_ordner)
+    wahl = auswahl_ordnen(auswahl)
+    gesperrt = wahl["ordner"] + wahl["auslassen"]
     plan, fehler = [], []
     for i, e in enumerate(eintraege):
         try:
             a = aktion(e)
+            if a and e.get("verschieben"):
+                sperre = ziel_gesperrt(ordner_von(a[1]), gesperrt)
+                if sperre:
+                    raise AufraeumFehler(f"„{e['pfad']}“: {sperre}")
         except AufraeumFehler as ex:
             fehler.append((e["pfad"], str(ex)))
             continue
         if a:
             plan.append((i, a))
-    erg = {"lauf": None, "anzahl": 0, "verschoben": 0, "umbenannt": 0, "zusatz": 0, "fehler": fehler, "erledigt": []}
+    erg = {"lauf": None, "anzahl": 0, "verschoben": 0, "umbenannt": 0, "zusatz": 0, "fehler": fehler, "erledigt": [],
+           "leere_ordner": []}
     if not plan:
         return erg
     lauf = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -710,8 +1258,9 @@ def ausfuehren(wurzel, eintraege: list, protokoll_ordner, melden=lambda i, n: No
     while datei.exists():
         datei = protokoll_ordner / f"lauf-{lauf}-{k}.json"; k += 1
     prot = {"version": 1, "id": datei.stem[5:], "wurzel": str(wurzel), "beginn": _jetzt(), "ende": None,
-            "aktionen": [], "ordner_angelegt": [], "rueckgaengig": None}
+            "quellen": wahl["ordner"], "lose": wahl["lose"], "aktionen": [], "ordner_angelegt": [], "rueckgaengig": None}
     _schreiben(datei, prot)
+    kandidaten: set = set()
     for nr, (i, (alt_rel, neu_rel)) in enumerate(plan):
         melden(nr, len(plan))
         eintrag = None
@@ -743,7 +1292,10 @@ def ausfuehren(wurzel, eintraege: list, protokoll_ordner, melden=lambda i, n: No
         erg["umbenannt"] += _name_von(neu_ist) != _name_von(alt_rel)
         erg["zusatz"] += neu_ist != neu_rel
         erg["erledigt"].append(i)
+        teile = ordner_von(alt_rel).split("/") if ordner_von(alt_rel) else []
+        kandidaten.update("/".join(teile[:k]) for k in range(1, len(teile) + 1))
     melden(len(plan), len(plan))
+    erg["leere_ordner"] = leere_ordner(wurzel, kandidaten | set(wahl["ordner"]))
     prot["ende"] = _jetzt()
     if prot["aktionen"] or prot["ordner_angelegt"]:
         _schreiben(datei, prot)
@@ -762,7 +1314,8 @@ def laeufe(protokoll_ordner) -> list[dict]:
         except (OSError, ValueError):
             continue
         raus.append({"id": p.get("id"), "wurzel": p.get("wurzel"), "beginn": p.get("beginn"), "anzahl": len(p.get("aktionen") or []),
-                     "rueckgaengig": p.get("rueckgaengig"), "datei": str(f)})
+                     "rueckgaengig": p.get("rueckgaengig"), "datei": str(f), "quellen": p.get("quellen") or [],
+                     "lose": bool(p.get("lose"))})
     return sorted(raus, key=lambda x: (x["beginn"] or "", x["id"] or ""), reverse=True)
 
 
@@ -818,6 +1371,8 @@ def rueckgaengig(protokoll_ordner, lauf_id: str | None = None) -> dict:
 # ---------------------------------------------------------------- Vorschlag merken (lange Läufe)
 
 def vorschlag_speichern(protokoll_ordner, wurzel, eintraege: list, einstellung: dict | None = None) -> None:
+    """Merkt den Vorschlag (auch über einen Neustart der App). `einstellung` trägt u. a. die Auswahl „Was aufräumen?“ und
+    Suche/Filter; ein Vorschlag aus 0.1.20 hat keine — dann gilt der ganze Ordner."""
     _schreiben(Path(protokoll_ordner) / "vorschlag.json",
                {"wurzel": str(wurzel), "datum": _jetzt(), "einstellung": einstellung or {}, "eintraege": eintraege})
 

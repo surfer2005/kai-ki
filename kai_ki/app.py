@@ -114,7 +114,10 @@ class Fenster(QMainWindow):
         # „Training“ (Weg 3, Peter 2026-11-18: Training-Zip in die App, gut für Laien): einrichten, Daten aus KAI holen, trainieren
         self.training = TrainingFenster(self.cfg, self.laeuft, self.anhalten, self.modell_verwenden); reiter.addTab(self.training, "Training")
         # „Aufräumen“ (Peter 2026-11-22: „räum die Dokumente auf“): Ordner auf diesem Mac sortieren — erst Vorschlag, dann ausführen
-        self.aufraeumen = AufraeumFenster(lambda: self.engine); reiter.addTab(self.aufraeumen, "Aufräumen")
+        self.aufraeumen = AufraeumFenster(lambda: self.engine)
+        rolle2 = QScrollArea(); rolle2.setWidget(self.aufraeumen); rolle2.setWidgetResizable(True); rolle2.setFrameShape(QFrame.NoFrame)
+        rolle2.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)          # kleines Fenster: die Seite scrollt statt zu stauchen
+        reiter.addTab(rolle2, "Aufräumen")
         self.setCentralWidget(reiter)
         # Startgröße: so hoch, dass alles ohne Scrollen passt, aber nie höher als der Bildschirm
         bild = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None

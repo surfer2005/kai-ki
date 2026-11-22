@@ -138,9 +138,9 @@ def test_doppelte(tmp_path):
     os.utime(tmp_path / "a.pdf", (1000, 1000)); os.utime(tmp_path / "Unter" / "a Kopie.pdf", (2000, 2000))
     dateien, _, _ = af.sammeln(tmp_path)
     assert af.doppelte_finden(tmp_path, dateien) == {"Unter/a Kopie.pdf": "a.pdf"}      # die ältere bleibt, leere zählen nicht
-    _datei(tmp_path / "Doppelt?" / "a.pdf", "gleich"); os.utime(tmp_path / "Doppelt?" / "a.pdf", (10, 10))
-    dateien, _, _ = af.sammeln(tmp_path)
-    assert af.doppelte_finden(tmp_path, dateien) == {"Unter/a Kopie.pdf": "a.pdf", "Doppelt?/a.pdf": "a.pdf"}
+    _datei(tmp_path / "Doppelt" / "a.pdf", "gleich"); os.utime(tmp_path / "Doppelt" / "a.pdf", (10, 10))
+    dateien, _, _ = af.sammeln(tmp_path)                                  # in „Doppelt“ ist nie das Original, auch wenn älter
+    assert af.doppelte_finden(tmp_path, dateien) == {"Unter/a Kopie.pdf": "a.pdf", "Doppelt/a.pdf": "a.pdf"}
 
 
 # ---------------------------------------------------------------- Nie überschreiben
@@ -288,14 +288,15 @@ def test_vorschlagslauf(tmp_path):
     erg = af.Vorschlagslauf(tmp_path, frage, lesen=lambda p, s, z, o: p.read_text(errors="ignore")[:z]).laufen()
     e = {x["pfad"]: x for x in erg["eintraege"]}
     assert len(fragen) == 3                                                   # die Kopie fragt die KI nicht
-    assert e["kopie.txt"]["status"] == "doppelt" and e["kopie.txt"]["ordner"] == "Doppelt?" and e["kopie.txt"]["verschieben"]
+    assert e["kopie.txt"]["status"] == "doppelt" and e["kopie.txt"]["ordner"] == "Doppelt" and e["kopie.txt"]["verschieben"]
+    assert e["kopie.txt"]["gleich_wie"] == "telekom.txt"
     assert e["telekom.txt"]["status"] == "vorschlag" and e["telekom.txt"]["ordner"] == "Rechnungen/2026"
     assert e["boese.txt"]["status"] == "unklar" and not e["boese.txt"]["verschieben"] and not e["boese.txt"]["name"]
     assert e["unklar.bin"]["status"] == "unklar"
     tk = next(f for f in fragen if "telekom.txt" in f)
     assert "<<<\nTelekom Deutschland GmbH Rechnung" in tk
-    assert "Schon vorgeschlagene Ordner: Rechnungen/2026" in fragen[-1] and "\x00" not in fragen[-1]
-    assert af.ordner_liste(erg["eintraege"]) == [("Doppelt?", 1), ("Rechnungen/2026", 1)]
+    assert "Schon vorgeschlagene NEUE Ordner: Rechnungen/2026" in fragen[-1] and "\x00" not in fragen[-1]
+    assert af.ordner_liste(erg["eintraege"], erg["vorhanden"]) == [("Doppelt", 1, True), ("Rechnungen/2026", 1, True)]
 
 
 def test_vorschlagslauf_ohne_modell_hoert_auf(tmp_path):
@@ -390,6 +391,10 @@ def test_vorschlag_merken(tmp_path):
 
 def test_aufgabe_enthaelt_inhalt_und_regeln():
     d = {"pfad": "Unter/scan.pdf", "groesse": 2_500_000, "geaendert": 1_790_000_000, "art": "PDF"}
-    t = af.aufgabe(d, "Telekom", ["Rechnungen", "Boot"], Counter({"Rechnungen/2026": 3}))
-    assert "Datei: scan.pdf" in t and "Liegt in: Unter" in t and "Größe: 2,5 MB" in t and "<<<\nTelekom\n>>>" in t
-    assert "Vorhandene Ordner: Rechnungen; Boot" in t and '"ordner": null' in t
+    baum = af.baum_text([{"pfad": "Rechnungen", "tiefe": 1, "direkt": 2, "gesamt": 2, "beispiele": [(2, "2026-09 Telekom Rechnung.pdf")]},
+                         {"pfad": "Boot", "tiefe": 1, "direkt": 0, "gesamt": 0, "beispiele": []}])
+    t = af.aufgabe(d, "Telekom", baum, Counter({"Rechnungen/2026": 3}), ganz=False)
+    assert "Datei: scan.pdf" in t and "Liegt jetzt in: Unter" in t and "Größe: 2,5 MB" in t and "<<<\nTelekom\n>>>" in t
+    assert "in der vorhandenen Ablage" in t and "2026-09 Telekom Rechnung.pdf" in t and '"ordner": null' in t
+    assert "Schon vorgeschlagene NEUE Ordner: Rechnungen/2026" in t
+    assert t.index("Vorhandene Ordner") < t.index("Datei: scan.pdf")           # fester Teil vorn (llama.cpp rechnet ihn nur einmal)
