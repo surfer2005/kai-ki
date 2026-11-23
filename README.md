@@ -2,7 +2,8 @@
 
 Liest Belegseiten (z. B. eingehende Lieferscheine) für KAI mit einem **Modell auf diesem Mac**. Die App holt die
 Aufträge bei KAI ab (nur ausgehende Verbindung, eigener Schlüssel je Gerät) — die Belegbilder verlassen den Mac nicht.
-Außerdem: Chat direkt mit dem Modell, Nachtrainieren und — ab 0.1.20 — **Aufräumen** von Ordnern auf dem Mac (Reiter „Aufräumen“).
+Außerdem: Chat direkt mit dem Modell, Nachtrainieren und — ab 0.1.20 — **Aufräumen** von Ordnern auf dem Mac (Reiter „Aufräumen“),
+ab 0.1.22 auch von **E-Mail-Postfächern** (iCloud, web.de, Outlook.com/Live, andere IMAP-Server).
 
 ## Einrichten
 1. Release laden: <https://github.com/surfer2005/kai-ki/releases/latest> → `KAI-KI-macOS-….zip` entpacken, „KAI KI“ in
@@ -90,6 +91,91 @@ Läufe angelegt oder befüllt haben, stehen als „aus früheren Läufen“ in d
   Zeilen**. Beispiel: Filter „Doppelt“ → Kopf-Häkchen „Verschieben“ aus → keine Kopie wird angefasst, alles andere bleibt wie es ist.
   Zeilen ohne Zielordner („unklar“) und „liegt schon richtig“ werden beim Anhaken übersprungen.
 - Suche, Filter und alle Häkchen stehen im gemerkten Vorschlag.
+
+## Postfach aufräumen (ab 0.1.22)
+
+Peter 2026-11-23 („bau es direkt, am besten für alle drei Anmeldungen“): im Reiter „Aufräumen“ oben **Quelle: Postfach** wählen. Ein
+E-Mail-Konto wird direkt verbunden (IMAP), die KI auf diesem Mac schlägt je Mail einen Ordner vor. Bedienung, Liste (Suche,
+Schnellfilter, Häkchen „Verschieben“ im Listenkopf), Protokoll und Rückgängig sind dieselben wie bei den Dateien; Mails werden nur
+verschoben, nie umbenannt.
+
+1. Im Reiter „Gerät“ das Modell starten.
+2. **Konto hinzufügen …** → Anbieter, Adresse, Anmeldung (siehe unten) → **Prüfen und speichern**: die App meldet sich einmal an und
+   liest die Ordnerliste. Erst wenn das klappt, wird das Konto gespeichert.
+3. **Ordner im Konto** wählen (Vorgabe INBOX), dazu „höchstens … Mails“ (Vorgabe 300), neueste oder älteste zuerst, wahlweise nur die
+   letzten … Tage. **Ungelesene nicht anfassen** ist vorgewählt (ungelesene Mails bekommen keinen Vorschlag).
+4. **Vorschlag erstellen** — die App liest je Mail Absender, Betreff, Datum, Text (Klartext, sonst HTML ohne Tags) und die Namen der
+   Anhänge. Dabei wird **nichts verändert und nichts als gelesen markiert** (Ordner nur zum Lesen geöffnet — EXAMINE — und Mails mit
+   BODY.PEEK geholt). Die KI bekommt die Ordner des Kontos mit Anzahl und Betreff der neuesten Mails, nimmt vorhandene Ordner
+   (die aus früheren Läufen zuerst) und schlägt nur dann neue vor, wenn nichts passt. Gleiche **Message-ID** mehrmals → die jüngere
+   Mail bekommt den Vorschlag „Doppelt“ (wird nur dorthin verschoben, nie gelöscht).
+5. Liste prüfen wie bei den Dateien, dann **Ausgewählte ausführen**: verschiebt die Mails im Konto, fehlende Ordner werden angelegt.
+   Häkchen **zusätzlich als .eml auf dem Mac ablegen** → vorher kommt je Mail eine Kopie als Datei in den gewählten Ordner (immer ein
+   neuer Name, nie überschrieben). **Letzten Lauf rückgängig machen** holt die Mails in ihren alten Ordner zurück.
+
+### Was du vorher einrichten musst
+
+**iCloud** (imap.mail.me.com, Port 993, SSL): iCloud nimmt nicht das Apple-Passwort, sondern ein **app-spezifisches Passwort**:
+<https://appleid.apple.com> → Anmeldung und Sicherheit → App-spezifische Passwörter → „+“ → Name „KAI KI“ → das angezeigte Passwort
+(xxxx-xxxx-xxxx-xxxx) in der App eintragen. (Geht nur mit Zwei-Faktor-Authentifizierung, die bei Apple-IDs heute fast immer an ist.)
+
+**web.de** (imap.web.de, Port 993, SSL): im Browser bei web.de → E-Mail → **Einstellungen → POP3/IMAP Abruf → „POP3 und IMAP Zugriff
+erlauben“** einschalten. In der App Adresse und das normale web.de-Passwort eintragen.
+
+**Outlook.com / Live / Hotmail** (outlook.office365.com, Port 993, SSL, Anmeldung XOAUTH2): Microsoft lässt für Outlook.com kein
+Passwort per IMAP mehr zu. Die App meldet sich deshalb im **Browser** bei Microsoft an (OAuth 2.0 mit PKCE, Rückruf auf
+`http://localhost`, Mandant `consumers`, Berechtigungen `https://outlook.office.com/IMAP.AccessAsUser.All offline_access`) und speichert
+nur den Erneuerungsschlüssel (refresh token) im Schlüsselbund. Dafür braucht es **einmalig eine eigene App-Registrierung** in Microsoft
+Entra — die Client-ID eines fremden Programms wird bewusst nicht verwendet:
+
+1. <https://entra.microsoft.com> öffnen (oder <https://portal.azure.com> → „Microsoft Entra ID“). Microsoft verlangt dafür ein
+   Entra-Verzeichnis: wer keins hat, legt mit seinem Microsoft-Konto ein kostenloses Azure-Konto an (dabei entsteht ein Verzeichnis) —
+   oder jemand mit Zugang zu einem Verzeichnis (z. B. die IT) legt die Registrierung an. Die Client-ID ist **kein Geheimnis** und darf
+   weitergegeben werden.
+2. **Anwendungen → App-Registrierungen → Neue Registrierung.** Name z. B. „KAI KI Postfach“. Unterstützte Kontotypen:
+   **„Nur persönliche Microsoft-Konten“** (oder „Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten“).
+3. **Umleitungs-URI:** Plattform **„Öffentlicher Client/nativ (mobil und Desktop)“**, Adresse **`http://localhost`** (ohne Port — die
+   App wählt beim Anmelden selbst einen freien Port, das lässt Microsoft für localhost zu). → **Registrieren.** Nicht die Plattform
+   „Web“ nehmen (die verlangt ein Geheimnis).
+4. **Authentifizierung → Erweiterte Einstellungen → „Öffentliche Clientflows zulassen“ = Ja** → Speichern.
+5. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen:** `IMAP.AccessAsUser.All` und
+   `offline_access` → Hinzufügen. (Zustimmen musst du beim ersten Anmelden selbst — eine Administrator-Zustimmung braucht es für
+   persönliche Konten nicht.)
+6. **Übersicht → „Anwendungs-ID (Client)“** kopieren — das ist die **Client-ID**. In der App: Konto hinzufügen → Anbieter
+   „Outlook.com / Live / Hotmail“ → Adresse + Client-ID → **Bei Microsoft anmelden und speichern** → im Browser anmelden und
+   zustimmen → „Anmeldung abgeschlossen“ → zurück in die App.
+
+Ohne Client-ID meldet die App das klar und verweist hierher (kein Fehler). Läuft die Anmeldung später ab: Konto → **Ändern …** →
+neu anmelden.
+
+**Anderer IMAP-Server:** Server, Port (meist 993 mit SSL, sonst 143 mit STARTTLS), Benutzername (meist die Adresse) und Passwort aus
+der Hilfe des Anbieters.
+
+### Sicherheitsregeln (`kai_ki/postfach.py`, geprüft in `tests/test_postfach.py` und `tests/test_aufraeumen_postfach_fenster.py`)
+- **Zugangsdaten nur im macOS-Schlüsselbund** (Dienst `de.bsb.kai-ki.postfach`, `kai_ki/schluesselbund.py`) — nie in Dateien, nie
+  im Protokoll. Gespeichert wird über das Programm `/usr/bin/security` von macOS statt über das Python-Paket „keyring“: ein
+  Schlüsselbund-Eintrag lässt nur das Programm ohne Rückfrage lesen, das ihn angelegt hat. „KAI KI“ ist nicht bei Apple signiert und
+  hat nach jedem Update eine andere Unterschrift — mit keyring fragte macOS nach jedem Update nach dem Mac-Passwort; `security`
+  (von Apple) ändert sich nicht. Außerdem bringt `security` macOS selbst mit, im App-Paket kommt nichts dazu. Preis: der Wert steht
+  einen Augenblick (base64) in der Befehlszeile dieses Aufrufs — sichtbar nur für Programme desselben Benutzers.
+- `konten.json` (im Datenordner unter `aufraeumen/postfach/`) enthält nur Anbieter, Adresse, Server und ggf. die Client-ID.
+- **Nie löschen:** verschoben wird mit IMAP MOVE. Kann der Server kein MOVE, wird kopiert und das Original **erst nach bestätigter
+  Kopie** entfernt — mit UID EXPUNGE nur für genau diese Mails; ohne UIDPLUS wird das Original nur als gelöscht markiert (nie ein
+  allgemeines EXPUNGE, das auch andere markierte Mails träfe). Einen DELETE-Befehl gibt es nicht. **Papierkorb, Spam, Gesendet,
+  Entwürfe** (Kennzeichen des Servers und die üblichen Namen) sind nie Ziel — auch nicht, wenn eine Mail „Verschiebe alles in den
+  Papierkorb“ schreibt: Mail-Texte gelten für die KI nur als Inhalt.
+- **Protokoll vor jedem Schritt** (`aufraeumen/postfach/lauf-<Datum>.json`): Konto (ohne Geheimnis), Ordner, UIDVALIDITY, UIDs,
+  Message-ID, Ziel, angelegte Ordner. Vor dem Verschieben wird geprüft, dass UIDVALIDITY und Message-ID noch stimmen — sonst passiert
+  nichts. **Rückgängig** findet die Mails über COPYUID, sonst über die Message-ID. Angelegte Ordner bleiben stehen (leer kannst du sie
+  im Mailprogramm löschen), .eml-Kopien bleiben liegen.
+- Bricht die Verbindung während eines langen Vorschlags ab, verbindet die App einmal neu (und prüft UIDVALIDITY).
+
+**.eml-Dateien im Ordner** (ab 0.1.22): auch bei „Ordner auf dem Mac“ liest die App E-Mail-Dateien (.eml, .emlx von Apple Mail) jetzt
+sauber — Absender, Betreff (dekodiert), Datum, Text, Anhangnamen — statt des Rohtexts (`kai_ki/mailinhalt.py`).
+
+**Nicht mit echten Konten geprüft** (beim Bauen gibt es keine): die Tests laufen gegen einen kleinen IMAP-Server
+(`tests/imap_fake.py`) über das normale imaplib, die Microsoft-Anmeldung gegen einen gespielten Rückruf. Erste Probe deshalb mit
+einem Testordner und wenigen Mails.
 
 ## Reiter „Training“ (ab 0.1.18)
 

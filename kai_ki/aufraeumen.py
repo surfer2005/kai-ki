@@ -48,13 +48,14 @@ PAKETE = {".app", ".bundle", ".framework", ".plugin", ".kext", ".appex", ".xpc",
           ".saver", ".prefpane", ".qlgenerator", ".mdimporter", ".sparsebundle", ".dsym", ".docarchive", ".lrlibrary", ".lrdata",
           ".abbu", ".photosmigrator", ".epub", ".sketch", ".nib", ".lproj", ".download", ".vmwarevm", ".pvm", ".utm"}
 BILDER = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".gif", ".bmp", ".webp"}
-TEXTE = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".eml", ".vcf", ".ics",
+TEXTE = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".vcf", ".ics",
          ".html", ".htm", ".rtf"}
+MAILS = {".eml", ".emlx"}                                      # ab 0.1.22: Absender, Betreff, Datum, Text, Anhänge (mailinhalt.py)
 ZIP_OFFICE = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
 TEXTUTIL = {".doc", ".rtf", ".webarchive", ".wordml"}          # liest macOS selbst (textutil), ohne neue Abhängigkeit
 ART = {".pdf": "PDF", ".docx": "Word", ".doc": "Word", ".odt": "Text (OpenOffice)", ".rtf": "Text", ".txt": "Text", ".md": "Text",
        ".xlsx": "Excel", ".xls": "Excel", ".ods": "Tabelle", ".csv": "Tabelle", ".pptx": "PowerPoint", ".ppt": "PowerPoint",
-       ".odp": "Präsentation", ".eml": "E-Mail", ".msg": "E-Mail", ".zip": "Archiv", ".dmg": "Festplattenabbild",
+       ".odp": "Präsentation", ".eml": "E-Mail", ".emlx": "E-Mail", ".msg": "E-Mail", ".zip": "Archiv", ".dmg": "Festplattenabbild",
        ".mp3": "Ton", ".m4a": "Ton", ".wav": "Ton", ".mp4": "Video", ".mov": "Video", ".html": "Webseite", ".htm": "Webseite"}
 
 SYSTEM = ("Du hilfst, Dateien auf einem Mac in Ordner zu sortieren. Du antwortest ausschließlich mit EINEM JSON-Objekt. "
@@ -308,7 +309,7 @@ def _sauber(t: str, laenge: int) -> str:
     return t if len(t) <= laenge else t[: laenge - 1] + "…"
 
 
-def baum_text(ordner: list, frueher=(), zeichen: int = BAUM_ZEICHEN) -> str:
+def baum_text(ordner: list, frueher=(), zeichen: int = BAUM_ZEICHEN, einheit=("Datei", "Dateien")) -> str:
     """Ordnerbaum für die KI: je Ordner Anzahl Dateien + die neuesten Beispielnamen. Ordner aus früheren Läufen zuerst (eigener
     Abschnitt, „bevorzugt“). Passt nicht alles in `zeichen`, gewinnen flache und volle Ordner; der Rest wird nur gezählt."""
     sichtbar = [o for o in ordner if o["pfad"].split("/")[0].casefold() not in DOPPELT_NAMEN]
@@ -317,7 +318,7 @@ def baum_text(ordner: list, frueher=(), zeichen: int = BAUM_ZEICHEN) -> str:
     fr = {f.casefold() for f in frueher}
 
     def zeile(o, mit_beispielen=True):
-        z = f"{_sauber(o['pfad'], 160)} — {o['direkt']} {'Datei' if o['direkt'] == 1 else 'Dateien'}"
+        z = f"{_sauber(o['pfad'], 160)} — {o['direkt']} {einheit[0] if o['direkt'] == 1 else einheit[1]}"
         if mit_beispielen and o["beispiele"]:
             z += ", z. B.: " + "; ".join(_sauber(n, 60) for _, n in o["beispiele"])
         return z
@@ -478,7 +479,8 @@ def fruehere_laeufe(protokoll_ordner, wurzel) -> dict:
             p = json.loads(f.read_text("utf-8"))
         except (OSError, ValueError):
             continue
-        if not isinstance(p, dict) or p.get("rueckgaengig") or os.path.realpath(p.get("wurzel") or "") != w:
+        if not isinstance(p, dict) or p.get("rueckgaengig") or p.get("art") == "postfach" or not p.get("wurzel") \
+                or os.path.realpath(p["wurzel"]) != w:
             continue
         quellen |= set(p.get("quellen") or [])
         for a in p.get("aktionen") or []:
@@ -668,7 +670,8 @@ def _pdf_text(pfad: Path, seiten: int, ocr: bool) -> str:
 
 def inhalt_lesen(pfad, seiten: int = 2, zeichen: int = 2000, ocr: bool = True) -> str:
     """Text einer Datei für die KI: PDF (Textebene, sonst Texterkennung der ersten Seiten), Bild (Texterkennung), Text, Word/Excel/
-    PowerPoint/OpenOffice (direkt aus der Datei), .doc/.rtf (macOS textutil). Leer, wenn nichts lesbar ist — dann reichen Name/Datum."""
+    PowerPoint/OpenOffice (direkt aus der Datei), .doc/.rtf (macOS textutil), E-Mail (.eml/.emlx: Absender, Betreff, Datum, Text,
+    Anhänge — ab 0.1.22, vorher Rohtext). Leer, wenn nichts lesbar ist — dann reichen Name/Datum."""
     pfad = Path(pfad)
     e = pfad.suffix.lower()
     try:
@@ -677,6 +680,9 @@ def inhalt_lesen(pfad, seiten: int = 2, zeichen: int = 2000, ocr: bool = True) -
         elif e in BILDER:
             from .seite import texterkennung_datei
             text = texterkennung_datei(pfad) if ocr else ""
+        elif e in MAILS:
+            from .mailinhalt import eml_datei_lesen
+            text = eml_datei_lesen(pfad, zeichen)
         elif e in ZIP_OFFICE:
             text = _zip_text(pfad, e, zeichen)
         elif e in TEXTUTIL and shutil.which("textutil"):
@@ -777,11 +783,16 @@ def _stamm_endung(name: str) -> tuple[str, str]:
     return (p.stem, p.suffix) if p.suffix and p.stem else (name, "")
 
 
+def liegt_in(e: dict) -> str:
+    """Wo der Eintrag jetzt liegt: bei Dateien der Ordner im Pfad, bei Mails (ab 0.1.22) der Ordner im Postfach („liegt_in“)."""
+    return e["liegt_in"] if "liegt_in" in e else ordner_von(e["pfad"])
+
+
 def status_auffrischen(e: dict) -> dict:
     """Liegt die Datei schon im Zielordner, ist nichts zu verschieben („bleibt“)."""
     if e.get("status") in ("unklar", "fehler"):
         return e
-    if e.get("ordner") == ordner_von(e["pfad"]):
+    if e.get("ordner") == liegt_in(e):
         e["verschieben"] = False
         if e.get("status") != "doppelt":
             e["status"] = "bleibt"
@@ -982,7 +993,8 @@ def _suche_passt(e: dict, suche: str) -> bool:
     """Der Suchtext steht so in Dateiname/bisherigem Ordner, Zielordner, neuem Namen, Hinweis oder „gleiche Datei wie“
     (Groß-/Kleinschreibung egal) — „unaufgeräumt 2“ findet also nicht auch „unaufgeräumt 1/scan2“."""
     s = _vergleich(suche or "")
-    return not s or any(s in _vergleich(str(e.get(k) or "")) for k in ("pfad", "ordner", "name", "grund", "gleich_wie"))
+    return not s or any(s in _vergleich(str(e.get(k) or "")) for k in ("pfad", "ordner", "name", "grund", "gleich_wie", "absender",
+                                                                        "betreff"))
 
 
 def sichtbare(eintraege: list, suche: str = "", filt: str = "alle", vorhanden=None) -> list[int]:
@@ -1315,14 +1327,16 @@ def laeufe(protokoll_ordner) -> list[dict]:
             continue
         raus.append({"id": p.get("id"), "wurzel": p.get("wurzel"), "beginn": p.get("beginn"), "anzahl": len(p.get("aktionen") or []),
                      "rueckgaengig": p.get("rueckgaengig"), "datei": str(f), "quellen": p.get("quellen") or [],
-                     "lose": bool(p.get("lose"))})
+                     "lose": bool(p.get("lose")), "art": p.get("art") or "ordner",
+                     "konto": (p.get("konto") or {}).get("adresse", ""), "quelle_anzeige": p.get("quelle_anzeige") or ""})
     return sorted(raus, key=lambda x: (x["beginn"] or "", x["id"] or ""), reverse=True)
 
 
 def rueckgaengig(protokoll_ordner, lauf_id: str | None = None) -> dict:
     """Einen Lauf (Vorgabe: den letzten noch nicht zurückgenommenen) rückwärts wiederherstellen. Nie überschreiben: ist der
     alte Platz inzwischen belegt, kommt die Datei mit „ (2)“ dorthin. Angelegte Ordner werden nur entfernt, wenn sie leer sind."""
-    offen = [l for l in laeufe(protokoll_ordner) if not l["rueckgaengig"] and (lauf_id is None or l["id"] == lauf_id)]
+    offen = [l for l in laeufe(protokoll_ordner) if not l["rueckgaengig"] and l["art"] != "postfach"
+             and (lauf_id is None or l["id"] == lauf_id)]
     if not offen:
         raise AufraeumFehler("Es gibt keinen Lauf, der sich noch rückgängig machen ließe.")
     datei = Path(offen[0]["datei"])

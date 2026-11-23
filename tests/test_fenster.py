@@ -74,3 +74,30 @@ def test_reiter_aufraeumen_ohne_ordner(fenster):
         assert w.height() >= w.minimumSizeHint().height(), w
     f.resize(560, 480); app.processEvents()
     assert a.tabelle.height() >= 100 and a.auswahl_baum.height() >= 60
+
+
+def test_reiter_aufraeumen_postfach(fenster):
+    """Quelle „Postfach“ (0.1.22): ohne Konto nur „Konto hinzufügen …“, nichts gestaucht — auch im kleinen Fenster; der
+    Konto-Dialog zeigt je Anbieter die passenden Felder (Outlook: Client-ID statt Passwort)."""
+    f, app = fenster
+    reiter = f.centralWidget()
+    reiter.setCurrentIndex(3); app.processEvents()
+    a = f.aufraeumen
+    a.quelle_setzen("postfach"); app.processEvents()
+    assert a.oben_stapel.currentIndex() == 1 and not a.ordner_zeile.isVisible() and not a.datei_optionen.isVisible()
+    assert a.konto_neu_knopf.isEnabled() and not a.start_knopf.isEnabled() and not a.konto_weg_knopf.isEnabled()
+    for w in (a.konto_wahl, a.konto_neu_knopf, a.pf_ordner_wahl, a.pf_ordner_knopf, a.pf_max, a.pf_tage, a.pf_reihenfolge,
+              a.pf_ungelesen, a.pf_archiv_knopf, a.start_knopf, a.suche, *a.quelle_knoepfe.values()):
+        assert w.height() >= w.minimumSizeHint().height(), w
+    f.resize(560, 480); app.processEvents()
+    assert a.tabelle.height() >= 100
+    from kai_ki.aufraeumfenster import KontoDialog
+    d = KontoDialog(a); d.show(); app.processEvents()
+    for k, pw, cid in (("icloud", True, False), ("webde", True, False), ("outlook", False, True), ("anders", True, False)):
+        d.anbieter.setCurrentIndex(d.anbieter.findData(k)); app.processEvents()
+        assert d.passwort.isVisible() == pw and d.client_id.isVisible() == cid and d.host.isVisible() == (k == "anders")
+        for w in (d.adresse, d.ok_knopf, *([d.passwort] if pw else [d.client_id])):
+            assert w.height() >= w.minimumSizeHint().height(), (k, w)
+    d.reject()
+    a.quelle_setzen("ordner"); app.processEvents()
+    assert a.oben_stapel.currentIndex() == 0 and a.auswahl_baum.height() >= 60
