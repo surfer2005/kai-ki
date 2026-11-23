@@ -97,7 +97,7 @@ def test_postfach_ganz_durchgespielt(tmp_path, app, antworten, server):
     ki = MailKI()
     f = _fenster(tmp_path, ki, speicher)
     f.quelle_setzen(POSTFACH)
-    assert f.oben_stapel.currentIndex() == 1 and not f.ordner_zeile.isVisibleTo(f) and f.tabelle.isColumnHidden(SP_NAME)
+    assert f.postfach_box.isVisibleTo(f) and not f.was_box.isVisibleTo(f) and not f.ordner_zeile.isVisibleTo(f) and f.tabelle.isColumnHidden(SP_NAME)
     assert f.tabelle.horizontalHeaderItem(SP_DATEI).text() == "Mail" and not f.start_knopf.isEnabled()
 
     # falsches Passwort: klare Meldung, nichts gespeichert, Passwort taucht nicht auf

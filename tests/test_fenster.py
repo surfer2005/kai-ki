@@ -84,7 +84,7 @@ def test_reiter_aufraeumen_postfach(fenster):
     reiter.setCurrentIndex(3); app.processEvents()
     a = f.aufraeumen
     a.quelle_setzen("postfach"); app.processEvents()
-    assert a.oben_stapel.currentIndex() == 1 and not a.ordner_zeile.isVisible() and not a.datei_optionen.isVisible()
+    assert a.postfach_box.isVisible() and not a.was_box.isVisible() and not a.ordner_zeile.isVisible() and not a.datei_optionen.isVisible()
     assert a.konto_neu_knopf.isEnabled() and not a.start_knopf.isEnabled() and not a.konto_weg_knopf.isEnabled()
     for w in (a.konto_wahl, a.konto_neu_knopf, a.pf_ordner_wahl, a.pf_ordner_knopf, a.pf_max, a.pf_tage, a.pf_reihenfolge,
               a.pf_ungelesen, a.pf_archiv_knopf, a.start_knopf, a.suche, *a.quelle_knoepfe.values()):
@@ -100,4 +100,4 @@ def test_reiter_aufraeumen_postfach(fenster):
             assert w.height() >= w.minimumSizeHint().height(), (k, w)
     d.reject()
     a.quelle_setzen("ordner"); app.processEvents()
-    assert a.oben_stapel.currentIndex() == 0 and a.auswahl_baum.height() >= 60
+    assert a.was_box.isVisible() and not a.postfach_box.isVisible() and a.auswahl_baum.height() >= 60

@@ -20,7 +20,7 @@ from PySide6.QtCore import QObject, QRect, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog,
                                QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMessageBox,
-                               QProgressBar, QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QStyle,
+                               QProgressBar, QPushButton, QSizePolicy, QSpinBox, QSplitter, QStyle,
                                QStyledItemDelegate, QStyleOptionButton, QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
@@ -319,11 +319,14 @@ class AufraeumFenster(QWidget):
         v0.addWidget(self.auswahl_baum)
         self.auswahl_hinweis = _text("")
         v0.addWidget(self.auswahl_hinweis)
-        self.oben_stapel = QStackedWidget(); self.oben_stapel.addWidget(g0); self.oben_stapel.addWidget(self._postfach_box())
-        self._seite_zeigen(0)
-        # „Was aufräumen?“ bzw. Postfach oben, Vorschlagsliste unten — die Trennlinie lässt sich ziehen
+        self.was_box = g0
+        # Postfach: eigener Bereich über der Liste, nicht im Teiler (dort bekam er auf dem Mac zu wenig Höhe)
+        self.postfach_box = self._postfach_box(); self.postfach_box.setVisible(False)
+        self.postfach_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        lay.addWidget(self.postfach_box)
+        # „Was aufräumen?“ oben, Vorschlagsliste unten — die Trennlinie lässt sich ziehen (im Postfach ist oben nichts)
         unten = QWidget(); ul = QVBoxLayout(unten); ul.setContentsMargins(0, 0, 0, 0)
-        self.hoch_teiler = QSplitter(Qt.Vertical); self.hoch_teiler.addWidget(self.oben_stapel); self.hoch_teiler.addWidget(unten)
+        self.hoch_teiler = QSplitter(Qt.Vertical); self.hoch_teiler.addWidget(g0); self.hoch_teiler.addWidget(unten)
         self.hoch_teiler.setChildrenCollapsible(False); self.hoch_teiler.setStretchFactor(0, 1); self.hoch_teiler.setStretchFactor(1, 3)
         self.hoch_teiler.setSizes([250, 450])
         lay.addWidget(self.hoch_teiler, 1)
@@ -466,7 +469,7 @@ class AufraeumFenster(QWidget):
         self.pf_hinweis = _text("Gelesen wird nur (keine Mail wird dabei als gelesen markiert). Verschoben wird erst nach „Ausgewählte "
                                 "ausführen“ — nie gelöscht, nie in Papierkorb, Spam, Gesendet oder Entwürfe. Zugangsdaten liegen nur im "
                                 "Schlüsselbund.")
-        v.addWidget(self.pf_hinweis); v.addStretch()
+        v.addWidget(self.pf_hinweis)
         e = self._pf_einstellung()
         self.pf_max.setValue(int(e.get("max") or 300)); self.pf_tage.setValue(int(e.get("tage") or 0))
         self.pf_reihenfolge.setCurrentIndex(0 if e.get("neueste", True) else 1)
@@ -631,7 +634,7 @@ class AufraeumFenster(QWidget):
         self.eintraege = eintraege
         mail = quelle == POSTFACH
         self.ordner_zeile.setVisible(not mail); self.datei_optionen.setVisible(not mail)
-        self._seite_zeigen(1 if mail else 0)
+        self.was_box.setVisible(not mail); self.postfach_box.setVisible(mail)
         self.tabelle.setColumnHidden(SP_UMBENENNEN, mail); self.tabelle.setColumnHidden(SP_NAME, mail)
         self._kopf_beschriften()
         self.suche.setPlaceholderText("Suchen: Betreff, Absender, Ordner, Hinweis …" if mail else "Suchen: Dateiname, Ordner, neuer Name, Hinweis …")
@@ -648,14 +651,6 @@ class AufraeumFenster(QWidget):
             else:
                 self._gemerkter_ordner()
         self._pf_einstellung_merken()
-
-    def _seite_zeigen(self, i: int):
-        """Oben „Was aufräumen?“ (0) oder Postfach (1). Die unsichtbare Seite zählt bei der Größe nicht mit (Ignored)."""
-        for k in range(self.oben_stapel.count()):
-            pol = QSizePolicy.Preferred if k == i else QSizePolicy.Ignored
-            self.oben_stapel.widget(k).setSizePolicy(pol, pol)
-        self.oben_stapel.setCurrentIndex(i)
-        self.oben_stapel.updateGeometry()
 
     def _gemerkter_ordner(self):
         """Ohne Serverabfrage: den zuletzt gewählten Ordner anbieten (die ganze Liste kommt mit „Ordner neu laden“)."""
