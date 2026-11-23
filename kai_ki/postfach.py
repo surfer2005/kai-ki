@@ -40,7 +40,7 @@ ANBIETER = {
                "hinweis": "iCloud nimmt NICHT dein normales Apple-Passwort, sondern ein <b>app-spezifisches Passwort</b>: "
                           "<a href='https://appleid.apple.com/account/manage'>appleid.apple.com</a> → Anmeldung und Sicherheit → "
                           "App-spezifische Passwörter → „+“ (Name z. B. „KAI KI“) → das angezeigte Passwort (xxxx-xxxx-xxxx-xxxx) hier "
-                          "eintragen."},
+                          "eintragen. Bleibt „Erstellen“ hellblau: die Seite in Chrome öffnen."},
     "webde": {"name": "web.de", "host": "imap.web.de", "port": 993, "sicherheit": "ssl", "anmeldung": "passwort",
               "passwort_titel": "Passwort",
               "hinweis": "Vorher in web.de den <b>IMAP-Abruf einschalten</b>: web.de im Browser → E-Mail → Einstellungen → "

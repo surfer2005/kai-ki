@@ -118,6 +118,7 @@ verschoben, nie umbenannt.
 **iCloud** (imap.mail.me.com, Port 993, SSL): iCloud nimmt nicht das Apple-Passwort, sondern ein **app-spezifisches Passwort**:
 <https://appleid.apple.com> → Anmeldung und Sicherheit → App-spezifische Passwörter → „+“ → Name „KAI KI“ → das angezeigte Passwort
 (xxxx-xxxx-xxxx-xxxx) in der App eintragen. (Geht nur mit Zwei-Faktor-Authentifizierung, die bei Apple-IDs heute fast immer an ist.)
+⚠️ Bleibt der Knopf „Erstellen“ hellblau (gesperrt), die Apple-Seite in **Chrome** öffnen — in Safari ging es am 23.11.2026 nicht.
 
 **web.de** (imap.web.de, Port 993, SSL): im Browser bei web.de → E-Mail → **Einstellungen → POP3/IMAP Abruf → „POP3 und IMAP Zugriff
 erlauben“** einschalten. In der App Adresse und das normale web.de-Passwort eintragen.
