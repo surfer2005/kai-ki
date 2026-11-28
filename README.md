@@ -20,6 +20,9 @@ ab 0.1.22 auch von **E-Mail-Postfächern** (iCloud, web.de, Outlook.com/Live, an
   nach Arbeitsspeicher mehrere Fragen auf einmal (llama-server `-np`, Kontext 12.288 je Frage): bis 23 GB eine (MacBook Air 16 GB wie
   bisher), ab 24 GB zwei, ab 40 GB vier (Mac mini 48/64 GB). Je zusätzlichem Platz holt ein Helfer NUR Chat-Aufträge bei KAI ab;
   Lesen (Lieferscheine), Sprechen und Hören bleiben nacheinander im Hauptablauf. Weitere Fragen warten in KAI, Chat vor Lieferscheinen.
+- **Reiter „Chat“:** allgemeiner Assistent für jede Frage, nur auf diesem Mac. Ab 0.1.24 lenkt er nicht mehr zu KAI (vorher begann die
+  Grundanweisung mit „Du bist die KI von KAI …“); KAI kommt nur vor, wenn ausdrücklich danach gefragt wird. Fragen mit KAI-Daten: KI-Chat in KAI.
+  Mit dem Modell „KAI angepasst“ (eigenes Training auf KAI-Abfragen) bleibt eine Neigung zu KAI — für allgemeine Fragen Qwen3.5 9B wählen.
 - Fenster schließen = weiter im Hintergrund (Punkt in der Menüleiste: grün bereit, blau arbeitet, rot getrennt).
 - Daten: `~/Library/Application Support/KAI-KI/` (Einstellungen mit Schlüssel nur für den Benutzer lesbar, Modelle, Protokoll).
 

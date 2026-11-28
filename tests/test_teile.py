@@ -128,6 +128,10 @@ def test_gespraech_in_der_app():
     from datetime import date
     from kai_ki.gespraech import system_text, verlauf_markdown
     assert "Dienstag, der 17.11.2026" in system_text(date(2026, 11, 17))
+    # allgemeiner Assistent, KAI nur auf ausdrückliche Frage (Peter 2026-11-28)
+    t = system_text(date(2026, 11, 28))
+    assert t.startswith("Du bist ein allgemeiner Assistent") and "jedem Thema" in t
+    assert "Nur falls ausdrücklich nach KAI gefragt wird" in t and "Sonst erwähne KAI nicht" in t
     md = verlauf_markdown([{"role": "user", "content": "Hallo", "anhang": "ls.pdf"}, {"role": "assistant", "content": "Hallo!"}], laufend="Ich")
     assert md.startswith("**Du:** 📎 ls.pdf") and "**KAI KI:**\n\nHallo!" in md and md.endswith("Ich ▍")
 
