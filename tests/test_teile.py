@@ -245,3 +245,52 @@ def test_eigenes_modell(tmp_path, monkeypatch):
     (tmp_path / "Qwen_Qwen3-VL-8B-Instruct-GGUF_mmproj-F16.gguf").write_bytes(b"x")     # anderes Modell → nicht nehmen
     assert engine.modell_quelle("kai-eigen", hinweise.append)[2:] == ["--mmproj", str(ablage / "mmproj-F16.gguf")]
     assert engine.modell_quelle("qwen35-9b") == ["-hf", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M"]
+
+
+def test_parallel_plaetze_nach_arbeitsspeicher():
+    """Peter 2026-11-28: mehrere Chat-Fragen gleichzeitig — MacBook Air 16 GB wie bisher eine, Mac mini 48/64 GB vier."""
+    from kai_ki.engine import parallel_plaetze
+    assert [parallel_plaetze(r) for r in (None, 8, 16, 24, 36, 48, 64, 128)] == [1, 1, 1, 2, 2, 4, 4, 4]
+
+
+def test_startschalter_kontext_fuer_alle_plaetze():
+    from kai_ki.engine import startschalter
+    s = startschalter(["-hf", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M"], 4, ["--reasoning", "off"])
+    assert s[:2] == ["-hf", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M"]
+    assert s[s.index("-c") + 1] == "49152" and s[s.index("-np") + 1] == "4"   # 4 × 12.288: jede Frage so viel Text wie bisher
+    assert s[-2:] == ["--reasoning", "off"]
+    eins = startschalter(["-m", "x.gguf"], 1)
+    assert eins[eins.index("-c") + 1] == "12288" and eins[eins.index("-np") + 1] == "1"
+
+
+def test_chat_helfer_je_weiterem_platz(monkeypatch):
+    """Je zusätzlichem Platz ein Helfer, der NUR Chat abholt; der Hauptablauf holt weiter alles (nacheinander)."""
+    import threading
+    import time
+    from kai_ki import arbeiter as ar
+    abgeholt = []
+
+    class FakeKai:
+        def __init__(self, adresse="https://kai.example/test", token="t"):
+            self.adresse, self.token = adresse, token
+
+        def hallo(self, *a, **k):
+            return {}
+
+        def auftrag(self, warten_ms=20000, arten=("lesen", "sprechen", "chat", "hoeren")):
+            abgeholt.append(tuple(arten)); time.sleep(0.05); return None
+
+    class FakeEngine:
+        modell_key = next(iter(ar.MODELLE)); plaetze = 3
+
+        def starten(self, **k):
+            pass
+
+    monkeypatch.setattr(ar, "Kai", FakeKai)
+    a = ar.Arbeiter(FakeKai(), FakeEngine(), sprecher=object(), hoerer=object())
+    a.start(); time.sleep(0.5)
+    namen = {t.name for t in threading.enumerate()}
+    a.halt.set()
+    assert {"chat-1", "chat-2"} <= namen and "chat-3" not in namen
+    assert ("chat",) in abgeholt
+    assert ("lesen", "sprechen", "chat", "hoeren") in abgeholt

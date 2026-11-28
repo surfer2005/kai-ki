@@ -189,9 +189,41 @@ def uebrig_gebliebene_beenden(melden=print) -> None:
     PID_DATEI.unlink(missing_ok=True)
 
 
+KONTEXT_JE_PLATZ = 12288   # so viel Text je Frage wie bisher (Systemtext + KAI-Daten + Gespräch, s. KAI ki-chat platzSchaffen)
+
+
+def ram_gb() -> int | None:
+    """Arbeitsspeicher des Macs in GB (None, wenn unbekannt)."""
+    try:
+        return round(int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout.strip()) / 1024 ** 3)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def parallel_plaetze(ram: int | None) -> int:
+    """Wie viele Fragen das Modell gleichzeitig rechnet (Peter 2026-11-28: „wenn 5 Leute gleichzeitig fragen“). Jede Frage braucht
+    ihren eigenen Zwischenspeicher (bei 12.288 Zeichenstücken je Frage bis gut 1,5 GB) — deshalb nach Arbeitsspeicher: 16 GB (MacBook Air)
+    wie bisher eine, ab 24 GB zwei, ab 40 GB (Mac mini 48/64 GB) vier. Mehr Fragen warten bei llama-server in der Schlange."""
+    if not ram:
+        return 1
+    if ram >= 40:
+        return 4
+    if ram >= 24:
+        return 2
+    return 1
+
+
+def startschalter(quelle: list, plaetze: int, zusatz: list | None = None) -> list:
+    """Schalter für llama-server: Kontext für ALLE Plätze zusammen (llama.cpp teilt -c durch -np), damit jede Frage wie bisher
+    12.288 hat."""
+    p = max(1, int(plaetze or 1))
+    return [*quelle, "--host", "127.0.0.1", "--port", str(PORT), "-c", str(KONTEXT_JE_PLATZ * p), "-np", str(p), "-ngl", "99", *(zusatz or [])]
+
+
 class Engine:
-    def __init__(self, modell_key: str, melden=print):
+    def __init__(self, modell_key: str, melden=print, plaetze: int | None = None):
         self.modell_key = modell_key if modell_key in MODELLE else next(iter(MODELLE))
+        self.plaetze = plaetze or parallel_plaetze(ram_gb())
         self._start_sperre = threading.Lock()
         self.melden = melden
         self.proc: subprocess.Popen | None = None
@@ -240,9 +272,10 @@ class Engine:
         else:
             self.melden(f"{self.modell_name} wird geladen …")
         log = open(self.log, "ab")
+        if self.plaetze > 1:
+            self.melden(f"{self.plaetze} Fragen gleichzeitig (Arbeitsspeicher {ram_gb() or '?'} GB)")
         self.proc = subprocess.Popen(
-            [str(server), *quelle, "--host", "127.0.0.1", "--port", str(PORT),
-             "-c", "12288", "-ngl", "99", *MODELLE[self.modell_key].get("args", [])],
+            [str(server), *startschalter(quelle, self.plaetze, MODELLE[self.modell_key].get("args", []))],
             stdout=log, stderr=subprocess.STDOUT, env=umgebung, cwd=str(server.parent))
         try:
             PID_DATEI.write_text(str(self.proc.pid))

@@ -56,6 +56,10 @@ class Arbeiter(threading.Thread):
             self.status("fehler"); self.melden(f"Modell konnte nicht starten: {e}")
             self.melden_kai("fehler", f"Modell konnte nicht starten: {e}"[:300])
             return
+        # Weitere Chat-Fragen gleichzeitig (Peter 2026-11-28): je zusätzlichem Platz des Modells ein Helfer, der NUR Chat abholt —
+        # Lesen, Sprechen und Hören bleiben hier im Hauptablauf, nacheinander (Sprecher und Hörer gibt es nur einmal).
+        for i in range(max(0, getattr(self.engine, "plaetze", 1) - 1)):
+            threading.Thread(target=self._chat_helfer, name=f"chat-{i + 1}", daemon=True).start()
         letztes_hallo = 0.0
         while not self.halt.is_set():
             try:
@@ -69,6 +73,20 @@ class Arbeiter(threading.Thread):
                 self.status("getrennt"); self.melden(str(e)); self.halt.wait(15)
             except Exception as e:  # noqa: BLE001
                 self.melden(f"Unerwarteter Fehler: {e}"); self.halt.wait(15)
+
+    def _chat_helfer(self) -> None:
+        """Holt nur Chat-Aufträge und beantwortet sie — parallel zum Hauptablauf. Eigene Verbindung zu KAI (die Sitzung des
+        Hauptablaufs wartet oft 20 s auf den nächsten Auftrag)."""
+        kai = Kai(self.kai.adresse, self.kai.token)
+        while not self.halt.is_set():
+            try:
+                a = kai.auftrag(arten=("chat",))
+                if a and a.get("art") == "chat" and not self.halt.is_set():
+                    self.chatten(a, kai)
+            except KaiFehler:
+                self.halt.wait(15)
+            except Exception as e:  # noqa: BLE001
+                self.melden(f"Unerwarteter Fehler (Chat): {e}"); self.halt.wait(15)
 
     def sprechen(self, a: dict) -> None:
         """Text → Tonspur. Beim ersten Mal wird der Sprecher eingerichtet (einige Minuten) — der Stand geht an KAI."""
@@ -116,14 +134,16 @@ class Arbeiter(threading.Thread):
             self.kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
             self.erledigt({"id": a["id"], "dauer_s": time.time() - beginn, "ok": False, "fehler": str(e), "art": "hoeren"})
 
-    def chatten(self, a: dict) -> None:
-        """Gespräch aus KAI: Antwort schreiben, den Zwischenstand alle 0,7 s melden (in KAI erscheint sie beim Schreiben)."""
+    def chatten(self, a: dict, kai: Kai | None = None) -> None:
+        """Gespräch aus KAI: Antwort schreiben, den Zwischenstand alle 0,7 s melden (in KAI erscheint sie beim Schreiben).
+        `kai` = Verbindung des Helfers, der den Auftrag geholt hat (sonst die des Hauptablaufs)."""
+        kai = kai or self.kai
         self.status("chattet")
         beginn, letzt, weiter = time.time(), [0.0], [True]
 
         def beim_schreiben(text: str) -> bool:
             if time.time() - letzt[0] > 0.7:
-                letzt[0] = time.time(); weiter[0] = self.kai.zwischenstand(a["id"], text)
+                letzt[0] = time.time(); weiter[0] = kai.zwischenstand(a["id"], text)
             return weiter[0]
         try:
             ocr = texterkennung if a.get("ocr") else (lambda png: "")
@@ -131,12 +151,12 @@ class Arbeiter(threading.Thread):
             text, ein, aus = self.engine.chat(nachrichten, int(a.get("max_tokens") or 1500), float(a.get("temperatur") or 0.3), beim_schreiben)
             dauer = int((time.time() - beginn) * 1000)
             if weiter[0]:
-                self.kai.ergebnis(a["id"], text=text, dauer_ms=dauer, tokens_ein=ein, tokens_aus=aus)
+                kai.ergebnis(a["id"], text=text, dauer_ms=dauer, tokens_ein=ein, tokens_aus=aus)
             self.erledigt({"id": a["id"], "dauer_s": dauer / 1000, "ok": True, "tokens": ein + aus, "art": "chat", "gestoppt": not weiter[0]})
         except KaiFehler:
             raise
         except Exception as e:  # noqa: BLE001 — Fehler an KAI melden, dort steht er im Chat
-            self.kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
+            kai.ergebnis(a["id"], fehler=str(e)[:500], dauer_ms=int((time.time() - beginn) * 1000))
             self.erledigt({"id": a["id"], "dauer_s": time.time() - beginn, "ok": False, "fehler": str(e), "art": "chat"})
 
     def bearbeiten(self, a: dict) -> None:
